@@ -238,7 +238,7 @@ User: "Analyze my VU meter's levels for the duration of my song and using
 the historic measurement data, identify where in the timecode each verse,
 chorus, and solo section begins."
 
-AI: Let me begin analyzing your VU meter plugin for 04:32 minutes (the exact
+AI: Let me begin analyzing your VU meter plugin for 05:32 minutes (the exact
 length of your mix, plus two seconds to accommodate for a slight delay in playback.)
 
 ...
@@ -246,7 +246,15 @@ length of your mix, plus two seconds to accommodate for a slight delay in playba
 Completed my analysis of your VU meter levels! Here is a breakdown of your song's
 musical structure based on the historical measurements data I procssed:
 
-1.
+1. 00:02 - Intro
+2. 00:28 - First verse
+3. 01:20 - First chorus
+4. 01:50 - Second verse
+5. 2:45 - Second chorus
+6. 3:32 - Solo
+7. 4:02 - Breakdown
+8. 4:20 - Last chorus
+9. 5:12 - Outro
 ```
 
 ## 🛠️ Development
