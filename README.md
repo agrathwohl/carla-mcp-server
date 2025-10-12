@@ -7,6 +7,7 @@ A comprehensive Model Context Protocol (MCP) server for complete control over th
 The Carla MCP Server provides **45+ tools** across **7 functional categories** for complete audio production control. Built with Python 3.12+, it offers a production-ready interface between AI assistants and professional audio software.
 
 **Key Features:**
+
 - **🤖 AI-Native**: Designed for natural language control through LLMs
 - **🎛️ Complete Control**: 45+ tools covering every aspect of audio production
 - **⚡ Real-Time**: Low-latency monitoring and analysis capabilities
@@ -17,15 +18,16 @@ The Carla MCP Server provides **45+ tools** across **7 functional categories** f
 
 Ask an AI assistant to help with professional audio tasks:
 
-- *"Load my mixing project and set up a drum bus with compression"*
-- *"Create a filter sweep effect on the lead synth, sync it to tempo"*
-- *"Analyze my mix and suggest improvements for better frequency balance"*
-- *"Set up parallel compression for vocals with different verse/chorus settings"*
-- *"Prepare this session for live performance with low latency"*
+- _"Load my mixing project and set up a drum bus with compression"_
+- _"Create a filter sweep effect on the lead synth, sync it to tempo"_
+- _"Analyze my mix and suggest improvements for better frequency balance"_
+- _"Set up parallel compression for vocals with different verse/chorus settings"_
+- _"Prepare this session for live performance with low latency"_
 
 ## 🎛️ Complete Feature Set
 
 ### 🗂️ **Session Management (8 tools)**
+
 - Load/save projects with auto-connection
 - Create A/B snapshots for comparison
 - Hot-swap between sessions with crossfading
@@ -33,6 +35,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Session cleanup and optimization
 
 ### 🔌 **Plugin Control (8 tools)**
+
 - Load VST2/3, LV2, LADSPA, DSSI, AU, SF2/SFZ plugins
 - Scan directories for available plugins
 - Clone and replace plugins with parameter mapping
@@ -40,6 +43,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Real-time plugin state control
 
 ### 🔗 **Audio Routing (8 tools)**
+
 - Complex audio/MIDI routing matrix
 - Bus creation and management with grouping
 - Sidechain configuration for compression
@@ -47,6 +51,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Connection gain control and automation
 
 ### 🎚️ **Parameter Automation (8 tools)**
+
 - Advanced automation with multiple curve types
 - MIDI CC mapping with custom ranges
 - Macro controls for multiple parameters
@@ -54,6 +59,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Parameter morphing and randomization
 
 ### 📊 **Real-Time Analysis (5 tools)**
+
 - Spectrum analysis with customizable FFT
 - Audio level metering (Peak, RMS, LUFS)
 - Latency measurement and optimization
@@ -61,6 +67,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Parameter capture over time
 
 ### 🔊 **JACK Integration (6 tools)**
+
 - JACK port management and connections
 - System audio routing
 - Port monitoring and status
@@ -68,6 +75,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Connection stability verification
 
 ### 🖥️ **Hardware Control (3+ tools)**
+
 - Audio interface configuration
 - Device discovery and management
 - Control surface mapping
@@ -78,6 +86,7 @@ Ask an AI assistant to help with professional audio tasks:
 ### Prerequisites
 
 1. **Carla Audio Plugin Host**
+
    ```bash
    # Ubuntu/Debian
    sudo apt install carla carla-dev
@@ -90,12 +99,14 @@ Ask an AI assistant to help with professional audio tasks:
    ```
 
 2. **Python Environment**
+
    ```bash
    # Requires Python 3.12+
    python3 --version  # Should be 3.12 or higher
    ```
 
 3. **Audio System**
+
    ```bash
    # JACK Audio Connection Kit (recommended)
    sudo apt install jackd2 jack-tools
@@ -107,6 +118,7 @@ Ask an AI assistant to help with professional audio tasks:
 ### Setup
 
 1. **Clone and Install**
+
    ```bash
    git clone https://github.com/your-org/carla-mcp-server.git
    cd carla-mcp-server
@@ -119,6 +131,7 @@ Ask an AI assistant to help with professional audio tasks:
    ```
 
 2. **Configure Environment**
+
    ```bash
    # Set Carla path (adjust to your installation)
    export CARLA_PATH=/usr/share/carla
@@ -127,6 +140,7 @@ Ask an AI assistant to help with professional audio tasks:
    ```
 
 3. **Test Installation**
+
    ```bash
    # Run test suite
    pytest tests/
@@ -172,6 +186,7 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 Once connected to an LLM, you can use natural language for complex audio tasks:
 
 #### Basic Mixing Session
+
 ```
 User: "Load my rock song project and add warmth to the vocals"
 
@@ -186,6 +201,7 @@ tape saturation and a gentle high-frequency roll-off.
 ```
 
 #### Creative Sound Design
+
 ```
 User: "Create an evolving filter sweep on the synth pad that builds tension"
 
@@ -200,6 +216,7 @@ intense peak, perfect for creating tension in your arrangement.
 ```
 
 #### Problem Solving
+
 ```
 User: "Something sounds muddy in my mix and there's a slight feedback"
 
@@ -220,24 +237,24 @@ Your mix should sound much cleaner now.
 
 ```
 carla-mcp-server/
-├── server.py              # Main MCP server (701 lines)
-├── carla_controller.py     # Carla backend wrapper (800 lines)
-├── tool_registry.py       # Tool registration system (569 lines)
-├── types.py               # Type definitions (263 lines)
-├── base_tools.py          # Base tool framework (355 lines)
-├── tools/                 # MCP tool implementations (2,900+ lines)
-│   ├── session_tools.py   # Session management (567 lines)
-│   ├── plugin_tools.py    # Plugin control (689 lines)
-│   ├── routing_tools.py   # Audio routing (558 lines)
-│   ├── parameter_tools.py # Parameter automation (740 lines)
-│   ├── analysis_tools.py  # Real-time analysis (534 lines)
-│   ├── jack_tools.py      # JACK integration (394 lines)
-│   └── hardware_tools.py  # Hardware control (235 lines)
-├── monitors/              # Real-time monitoring (310 lines)
+├── server.py              # Main MCP server
+├── carla_controller.py     # Carla backend wrapper
+├── tool_registry.py       # Tool registration system
+├── types.py               # Type definitions
+├── base_tools.py          # Base tool framework
+├── tools/                 # MCP tool implementations
+│   ├── session_tools.py   # Session management
+│   ├── plugin_tools.py    # Plugin control
+│   ├── routing_tools.py   # Audio routing
+│   ├── parameter_tools.py # Parameter automation
+│   ├── analysis_tools.py  # Real-time analysis
+│   ├── jack_tools.py      # JACK integration
+│   └── hardware_tools.py  # Hardware control
+├── monitors/              # Real-time monitoring
 │   ├── audio_monitor.py   # Audio level monitoring
 │   ├── cpu_monitor.py     # Performance monitoring
 │   └── event_monitor.py   # Event streaming
-├── tests/                 # Comprehensive test suite (660+ lines)
+├── tests/                 # Comprehensive test suite
 └── config/                # Configuration files
 ```
 
@@ -279,6 +296,7 @@ pre-commit run --all-files
 ### Adding New Tools
 
 1. **Create Tool Method** in appropriate `tools/` module:
+
    ```python
    async def my_new_tool(self, param1: str, param2: int = 10) -> dict:
        """Tool description for documentation."""
@@ -290,6 +308,7 @@ pre-commit run --all-files
    ```
 
 2. **Register Tool** in `tool_registry.py`:
+
    ```python
    ToolDefinition(
        name="my_new_tool",
@@ -308,6 +327,7 @@ pre-commit run --all-files
 ## 🧩 Complete Tool Reference
 
 ### Session Management
+
 - `load_session` - Load Carla project files
 - `save_session` - Save current session state
 - `create_snapshot` - Create A/B comparison snapshots
@@ -318,6 +338,7 @@ pre-commit run --all-files
 - `import_session` - Import from external formats
 
 ### Plugin Control
+
 - `load_plugin` - Load any plugin format
 - `scan_plugins` - Discover available plugins
 - `control_plugin` - Activate/bypass/solo/remove
@@ -328,6 +349,7 @@ pre-commit run --all-files
 - `replace_plugin` - Swap plugins with parameter mapping
 
 ### Audio Routing
+
 - `connect_audio` - Create audio connections
 - `create_bus` - Build audio buses for grouping
 - `setup_sidechain` - Configure sidechain routing
@@ -337,6 +359,7 @@ pre-commit run --all-files
 - `set_connection_gain` - Adjust connection levels
 
 ### Parameter Automation
+
 - `automate_parameter` - Create automation curves
 - `map_midi_cc` - MIDI controller mapping
 - `create_macro` - Multi-parameter macros
@@ -347,6 +370,7 @@ pre-commit run --all-files
 - `morph_parameters` - Smooth parameter transitions
 
 ### Real-Time Analysis
+
 - `analyze_spectrum` - FFT spectrum analysis
 - `measure_levels` - Peak/RMS/LUFS metering
 - `capture_plugin_parameters` - Parameter monitoring
@@ -354,6 +378,7 @@ pre-commit run --all-files
 - `analyze_latency` - System latency measurement
 
 ### JACK Integration
+
 - `list_jack_ports` - Show available JACK ports
 - `connect_jack_ports` - Connect JACK ports
 - `disconnect_jack_ports` - Disconnect JACK ports
@@ -362,6 +387,7 @@ pre-commit run --all-files
 - `connect_plugin_to_system` - Route plugins to system output
 
 ### Hardware Control
+
 - `configure_audio_interface` - Set up audio hardware
 - `list_audio_devices` - Discover audio devices
 - `map_control_surface` - Configure MIDI controllers
@@ -425,6 +451,7 @@ export CARLA_MCP_PORT=8765
 ### Common Issues
 
 **Carla Not Found**
+
 ```bash
 # Check Carla installation
 which carla
@@ -435,6 +462,7 @@ sudo apt install carla carla-dev
 ```
 
 **Plugin Loading Errors**
+
 ```bash
 # Check plugin paths
 carla-discover /path/to/plugin.vst3
@@ -444,6 +472,7 @@ winecfg  # Configure Wine prefix
 ```
 
 **JACK Connection Issues**
+
 ```bash
 # Check JACK status
 jack_control status
@@ -456,6 +485,7 @@ jack_sample_rate
 ```
 
 **Permission Errors**
+
 ```bash
 # Add user to audio group
 sudo usermod -a -G audio $USER
@@ -467,12 +497,14 @@ ls -la ~/.wine/drive_c/Program\ Files/Common\ Files/VST3/
 ### Performance Optimization
 
 **Low Latency Setup**
+
 - Use JACK with 128-sample buffers
 - Enable real-time kernel scheduling
 - Optimize CPU governor settings
 - Use SSD storage for projects
 
 **High Track Count**
+
 - Increase JACK timeout values
 - Use plugin bridges for stability
 - Enable force-stereo mode for mono plugins
@@ -481,6 +513,7 @@ ls -la ~/.wine/drive_c/Program\ Files/Common\ Files/VST3/
 ## 📊 System Requirements
 
 ### Minimum Requirements
+
 - **OS**: Linux (Ubuntu 20.04+), macOS (10.15+), Windows 10+
 - **Python**: 3.12 or higher
 - **RAM**: 4GB RAM (8GB recommended)
@@ -488,6 +521,7 @@ ls -la ~/.wine/drive_c/Program\ Files/Common\ Files/VST3/
 - **Audio**: Professional audio interface recommended
 
 ### Recommended Setup
+
 - **OS**: Ubuntu 22.04 LTS with real-time kernel
 - **RAM**: 16GB+ for large projects
 - **CPU**: 8+ core processor for complex processing
@@ -499,6 +533,7 @@ ls -la ~/.wine/drive_c/Program\ Files/Common\ Files/VST3/
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Quick Contribution Steps:**
+
 1. Fork the repository
 2. Create a feature branch
 3. Add tests for new functionality
@@ -525,3 +560,4 @@ This project is licensed under the GPL-2.0-or-later License - see the [LICENSE](
 ---
 
 **Ready to revolutionize your audio production workflow with AI assistance? Get started today!** 🎵✨
+
