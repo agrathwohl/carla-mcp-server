@@ -231,6 +231,24 @@ and fixed a feedback loop between your reverb send and input.
 Your mix should sound much cleaner now.
 ```
 
+#### Analyze A Mix's Song Structure
+
+```
+User: "Analyze my VU meter's levels for the duration of my song and using
+the historic measurement data, identify where in the timecode each verse,
+chorus, and solo section begins."
+
+AI: Let me begin analyzing your VU meter plugin for 04:32 minutes (the exact
+length of your mix, plus two seconds to accommodate for a slight delay in playback.)
+
+...
+
+Completed my analysis of your VU meter levels! Here is a breakdown of your song's
+musical structure based on the historical measurements data I procssed:
+
+1.
+```
+
 ## 🛠️ Development
 
 ### Project Structure
@@ -446,88 +464,6 @@ export CARLA_MCP_HOST=localhost
 export CARLA_MCP_PORT=8765
 ```
 
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Carla Not Found**
-
-```bash
-# Check Carla installation
-which carla
-python -c "import carla_backend"
-
-# If missing, install Carla properly
-sudo apt install carla carla-dev
-```
-
-**Plugin Loading Errors**
-
-```bash
-# Check plugin paths
-carla-discover /path/to/plugin.vst3
-
-# For Windows VSTs on Linux
-winecfg  # Configure Wine prefix
-```
-
-**JACK Connection Issues**
-
-```bash
-# Check JACK status
-jack_control status
-
-# Start JACK if needed
-jack_control start
-
-# Check sample rate matching
-jack_sample_rate
-```
-
-**Permission Errors**
-
-```bash
-# Add user to audio group
-sudo usermod -a -G audio $USER
-
-# Check file permissions
-ls -la ~/.wine/drive_c/Program\ Files/Common\ Files/VST3/
-```
-
-### Performance Optimization
-
-**Low Latency Setup**
-
-- Use JACK with 128-sample buffers
-- Enable real-time kernel scheduling
-- Optimize CPU governor settings
-- Use SSD storage for projects
-
-**High Track Count**
-
-- Increase JACK timeout values
-- Use plugin bridges for stability
-- Enable force-stereo mode for mono plugins
-- Monitor CPU usage with built-in tools
-
-## 📊 System Requirements
-
-### Minimum Requirements
-
-- **OS**: Linux (Ubuntu 20.04+), macOS (10.15+), Windows 10+
-- **Python**: 3.12 or higher
-- **RAM**: 4GB RAM (8GB recommended)
-- **CPU**: Multi-core processor (4+ cores recommended)
-- **Audio**: Professional audio interface recommended
-
-### Recommended Setup
-
-- **OS**: Ubuntu 22.04 LTS with real-time kernel
-- **RAM**: 16GB+ for large projects
-- **CPU**: 8+ core processor for complex processing
-- **Storage**: SSD for projects and plugin libraries
-- **Audio**: Professional interface with JACK support
-
 ## 🤝 Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
@@ -560,4 +496,3 @@ This project is licensed under the GPL-2.0-or-later License - see the [LICENSE](
 ---
 
 **Ready to revolutionize your audio production workflow with AI assistance? Get started today!** 🎵✨
-
