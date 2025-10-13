@@ -28,6 +28,7 @@ dependencies = [
     "aiofiles>=0.8.0",
     "pyyaml>=5.4.0",
     "python-dotenv>=0.19.0",
+    "pytest>=8.4.2",
 ]
 
 [project.urls]
@@ -110,7 +111,7 @@ strict_optional = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --cov=carla_mcp_server --cov-report=term-missing"
+addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 

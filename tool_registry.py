@@ -376,6 +376,53 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "required": ["plugin_id", "parameter_id", "cc_number"]
             }
         ),
+        ToolDefinition(
+            name="set_parameter",
+            description="Set a plugin parameter value",
+            handler="parameter_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {
+                        "type": "string",
+                        "description": "Plugin ID"
+                    },
+                    "parameter_id": {
+                        "type": "integer",
+                        "description": "Parameter index"
+                    },
+                    "value": {
+                        "type": "number",
+                        "description": "Parameter value (typically 0.0 to 1.0)"
+                    },
+                    "session_context": {
+                        "type": "object",
+                        "description": "Optional session context data"
+                    }
+                },
+                "required": ["plugin_id", "parameter_id", "value"],
+                "additionalProperties": False
+            }
+        ),
+        ToolDefinition(
+            name="get_parameter",
+            description="Get a plugin parameter value and information",
+            handler="parameter_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {
+                        "type": "string",
+                        "description": "Plugin ID"
+                    },
+                    "parameter_id": {
+                        "type": "integer",
+                        "description": "Parameter index"
+                    }
+                },
+                "required": ["plugin_id", "parameter_id"]
+            }
+        ),
     ]
 
     # Analysis tools

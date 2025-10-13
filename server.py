@@ -33,6 +33,7 @@ from tools.jack_tools import JackTools
 from monitors.event_monitor import EventMonitor
 from monitors.audio_monitor import AudioMonitor
 from monitors.cpu_monitor import CPUMonitor
+from mixassist_resources import mixassist_provider
 
 # Configure logging
 logging.basicConfig(
@@ -87,9 +88,10 @@ class CarlaMCPServer:
             'cpu_usage': 0
         }
         
-        # Register all tools
+        # Register all tools and resources
         self._register_tools()
-        
+        self._register_resources()
+
         # Setup event handlers
         self._setup_event_handlers()
         
@@ -400,8 +402,33 @@ class CarlaMCPServer:
                         "required": ["name", "targets"]
                     }
                 ),
+                types.Tool(
+                    name="set_parameter",
+                    description="Set a plugin parameter value",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "plugin_id": {"type": "string", "description": "Plugin ID"},
+                            "parameter_id": {"type": "integer", "description": "Parameter index"},
+                            "value": {"type": "number", "description": "Parameter value (typically 0.0 to 1.0)"}
+                        },
+                        "required": ["plugin_id", "parameter_id", "value"]
+                    }
+                ),
+                types.Tool(
+                    name="get_parameter",
+                    description="Get a plugin parameter value and information",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "plugin_id": {"type": "string", "description": "Plugin ID"},
+                            "parameter_id": {"type": "integer", "description": "Parameter index"}
+                        },
+                        "required": ["plugin_id", "parameter_id"]
+                    }
+                ),
             ])
-            
+
             # Analysis tools
             tools.extend([
                 types.Tool(
@@ -609,7 +636,34 @@ class CarlaMCPServer:
                         "arguments": arguments
                     }, indent=2)
                 )]
-    
+
+    def _register_resources(self):
+        """Register MCP resources including MixAssist dataset"""
+
+        @self.server.list_resources()
+        async def handle_list_resources() -> list[types.Resource]:
+            """Return all available resources"""
+            resources = []
+
+            # Add MixAssist dataset resources
+            resources.extend(mixassist_provider.get_available_resources())
+
+            return resources
+
+        @self.server.read_resource()
+        async def handle_read_resource(uri: str) -> str:
+            """Read content from a resource"""
+            try:
+                # Route MixAssist resources
+                if uri.startswith("mixassist://"):
+                    return mixassist_provider.get_resource_content(uri)
+                else:
+                    raise ValueError(f"Unknown resource URI: {uri}")
+
+            except Exception as e:
+                logger.error(f"Failed to read resource {uri}: {str(e)}")
+                raise
+
     async def _execute_tool(self, name: str, arguments: dict) -> dict:
         """Execute a specific tool"""
         
@@ -624,7 +678,7 @@ class CarlaMCPServer:
             return await self.plugin_tools.execute(name, arguments)
         elif name in ['connect_audio', 'create_bus', 'setup_sidechain', 'get_routing_matrix']:
             return await self.routing_tools.execute(name, arguments)
-        elif name in ['automate_parameter', 'map_midi_cc', 'create_macro']:
+        elif name in ['automate_parameter', 'map_midi_cc', 'create_macro', 'set_parameter', 'get_parameter']:
             return await self.parameter_tools.execute(name, arguments)
         elif name in ['analyze_spectrum', 'measure_levels', 'capture_plugin_parameters', 'detect_feedback', 'analyze_latency']:
             return await self.analysis_tools.execute(name, arguments)

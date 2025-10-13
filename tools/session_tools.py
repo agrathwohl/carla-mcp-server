@@ -75,12 +75,14 @@ class SessionTools:
         Returns:
             Session information
         """
+        warnings = []
+        
         try:
             # Ensure engine is running
             if not self.carla.engine_running:
                 self.carla.start_engine()
             
-            # Load the project
+            # Load the project - this is the critical operation
             success = self.carla.load_project(path)
             
             if not success:
@@ -89,26 +91,52 @@ class SessionTools:
             # Generate session ID
             session_id = str(uuid.uuid4())
             
-            # Get plugin information
+            # Get plugin information - non-critical, collect warnings
             plugin_count = self.carla.host.get_current_plugin_count()
             plugins = []
             
             for i in range(plugin_count):
-                info = self.carla.host.get_plugin_info(i)
-                if info:
+                try:
+                    info = self.carla.host.get_plugin_info(i)
+                    if info:
+                        plugins.append({
+                            'id': i,
+                            'name': info.get('name', f'Plugin_{i}'),
+                            'type': info.get('label', 'Unknown'),
+                            'audio_ins': info.get('audioIns', 0),  # Safe access
+                            'audio_outs': info.get('audioOuts', 0),  # Safe access
+                            'parameters': self.carla.host.get_parameter_count(i)
+                        })
+                    else:
+                        # Plugin exists but info unavailable
+                        plugins.append({
+                            'id': i,
+                            'name': f'Plugin_{i}',
+                            'type': 'Unknown',
+                            'audio_ins': 0,
+                            'audio_outs': 0,
+                            'parameters': self.carla.host.get_parameter_count(i)
+                        })
+                        warnings.append(f"Plugin {i}: info unavailable, using defaults")
+                except Exception as e:
+                    warnings.append(f"Plugin {i}: failed to get info - {str(e)}")
+                    # Add minimal plugin info so we don't lose track
                     plugins.append({
                         'id': i,
-                        'name': info['name'],
-                        'type': info['label'],
-                        'audio_ins': info['audioIns'],
-                        'audio_outs': info['audioOuts'],
-                        'parameters': self.carla.host.get_parameter_count(i)
+                        'name': f'Plugin_{i}',
+                        'type': 'Unknown',
+                        'audio_ins': 0,
+                        'audio_outs': 0,
+                        'parameters': 0
                     })
             
             # Auto-connect if requested
             if auto_connect:
-                self.carla.refresh_connections()
-                # Patchbay connections are loaded from the project file automatically
+                try:
+                    self.carla.refresh_connections()
+                    # Patchbay connections are loaded from the project file automatically
+                except Exception as e:
+                    warnings.append(f"Auto-connect failed: {str(e)}")
             
             # Store session info
             self.sessions[session_id] = {
@@ -124,8 +152,10 @@ class SessionTools:
             self.active_session = session_id
             
             logger.info(f"Loaded session {session_id}: {path}")
+            if warnings:
+                logger.warning(f"Session loaded with warnings: {warnings}")
             
-            return {
+            result = {
                 'success': True,
                 'session_id': session_id,
                 'name': self.sessions[session_id]['name'],
@@ -134,6 +164,12 @@ class SessionTools:
                 'sample_rate': self.carla.host.get_sample_rate(),
                 'buffer_size': self.carla.host.get_buffer_size()
             }
+            
+            # Add warnings if any occurred
+            if warnings:
+                result['warnings'] = warnings
+                
+            return result
             
         except Exception as e:
             logger.error(f"Failed to load session: {str(e)}")

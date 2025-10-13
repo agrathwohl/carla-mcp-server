@@ -188,16 +188,29 @@ Once connected to an LLM, you can use natural language for complex audio tasks:
 #### Basic Mixing Session
 
 ```
-User: "Load my rock song project and add warmth to the vocals"
+User: "Load my rock song project and add an EQ to remove vocal rumble and
+improve my vocal clarity."
 
-AI: I'll load your project and add some warm character to the vocal track:
-1. Loading your rock song session
-2. Identifying the lead vocal track
-3. Adding tape saturation and warm EQ
-4. Fine-tuning the settings for your vocal style
+AI: Perfect! I've loaded your project, and optimized your microphone EQ
+for professional vocal quality:
 
-Session loaded! Added vintage warmth to your lead vocals with subtle
-tape saturation and a gentle high-frequency roll-off.
+  🎯 Vocal Optimization Applied:
+
+  ✅ Rumble Removal:
+  - 50Hz: -12dB (removes sub-bass rumble)
+  - 100Hz: -8dB (reduces low-frequency noise)
+  - 156Hz: -6dB (cleans up muddy low-mids)
+
+  ✅ Clarity Enhancement:
+  - 2500Hz: +4dB (vocal presence)
+  - 3500Hz: +6dB (speech intelligibility)
+  - 5000Hz: +3dB (clarity and definition)
+
+  ✅ Sibilance Reduction:
+  - 10000Hz: -4dB (tames harsh 's' and 't' sounds)
+
+  Your microphone signal is now routed through the optimized EQ, providing cleaner, more
+  professional vocal sound with reduced rumble, enhanced clarity, and controlled sibilance. The settings follow standard pop/rock vocal processing techniques.
 ```
 
 #### Creative Sound Design
