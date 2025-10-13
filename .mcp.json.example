@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "carla-mcp-server": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/gwohl/code/carla-mcp-server/server.py"
+      ],
+      "env": {
+        "CARLA_PATH": "/home/gwohl/builds/Carla",
+        "PYTHONPATH": "/home/gwohl/builds/Carla/source/frontend",
+        "LD_LIBRARY_PATH": "/home/gwohl/builds/Carla/bin:/nix/store/wfna2fx4023769504rjzgn0mz0m6bc0c-libx11-1.8.12/lib/:/nix/store/sr98snb2zgnf5q2ss6vjwi0frhgx2v5m-alsa-lib-1.2.14/lib:/nix/store/bp4qwdyll7c128km238knfyjf7l5x0dy-jack2-1.9.22/lib:/nix/store/qs20y382adadwm5sr5gvpc343kj6208f-libsndfile-1.2.2/lib:/nix/store/n9hw8qzq7b3gjvicq1z4gh251dp19j9s-liblo-0.32/lib:/nix/store/v40ijzz8p2fpk9ihjck3a1ncqaqfmn3c-file-5.45/lib:/nix/store/30gbzik2rvw90hxx2ldhc6lb4gn1jfhi-fluidsynth-2.4.6/lib:/nix/store/0idq24xm0f6pg15ckii31agha3zn1whm-libpulseaudio-16.1/lib:/nix/store/090dqxvksccybvma300n4rx044y4cxvy-xgcc-13.3.0-libgcc/lib:"
+      }
+    }
+  }
+}
