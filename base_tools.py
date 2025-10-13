@@ -11,13 +11,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Callable, Any, Optional
 from datetime import datetime
 
-from .types import (
-    ToolResult,
-    JsonDict,
-    CarlaController,
-    ToolHandler,
-    ToolRegistrationError,
-)
+# Remove broken import - these types are not defined
 
 logger = logging.getLogger(__name__)
 

@@ -4,12 +4,12 @@ A comprehensive Model Context Protocol (MCP) server for complete control over th
 
 ## 🎯 Project Overview
 
-The Carla MCP Server provides **45+ tools** across **7 functional categories** for complete audio production control. Built with Python 3.12+, it offers a production-ready interface between AI assistants and professional audio software.
+The Carla MCP Server provides **45 tools** across **7 functional categories** for complete audio production control. Built with Python 3.12+, it offers a production-ready interface between AI assistants and professional audio software.
 
 **Key Features:**
 
 - **🤖 AI-Native**: Designed for natural language control through LLMs
-- **🎛️ Complete Control**: 45+ tools covering every aspect of audio production
+- **🎛️ Complete Control**: 45 tools covering every aspect of audio production
 - **⚡ Real-Time**: Low-latency monitoring and analysis capabilities
 - **🔧 Professional**: Production-ready with comprehensive error handling and type safety
 - **📈 Scalable**: Modular architecture supporting complex workflows
@@ -42,21 +42,20 @@ Ask an AI assistant to help with professional audio tasks:
 - Batch processing with plugin chains
 - Real-time plugin state control
 
-### 🔗 **Audio Routing (8 tools)**
+### 🔗 **Audio Routing (7 tools)**
 
 - Complex audio/MIDI routing matrix
 - Bus creation and management with grouping
 - Sidechain configuration for compression
-- Send/return effect routing
-- Connection gain control and automation
+- Real-time routing matrix inspection
 
 ### 🎚️ **Parameter Automation (8 tools)**
 
 - Advanced automation with multiple curve types
 - MIDI CC mapping with custom ranges
 - Macro controls for multiple parameters
-- Real-time parameter recording
-- Parameter morphing and randomization
+- Direct parameter get/set operations
+- Real-time parameter control and monitoring
 
 ### 📊 **Real-Time Analysis (5 tools)**
 
@@ -74,7 +73,7 @@ Ask an AI assistant to help with professional audio tasks:
 - Auto-connection for plugins
 - Connection stability verification
 
-### 🖥️ **Hardware Control (3+ tools)**
+### 🖥️ **Hardware Control (3 tools)**
 
 - Audio interface configuration
 - Device discovery and management
@@ -403,8 +402,8 @@ pre-commit run --all-files
 - `map_midi_cc` - MIDI controller mapping
 - `create_macro` - Multi-parameter macros
 - `record_automation` - Capture parameter changes
-- `set_parameter` - Direct parameter control
-- `get_parameter` - Read parameter values
+- `set_parameter` - Set plugin parameter values directly
+- `get_parameter` - Get plugin parameter values and info
 - `randomize_parameters` - Creative randomization
 - `morph_parameters` - Smooth parameter transitions
 

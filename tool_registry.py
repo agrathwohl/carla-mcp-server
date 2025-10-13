@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 
 from mcp import types
 
-from .types import ToolResult, JsonDict
-
 logger = logging.getLogger(__name__)
 
 
@@ -23,7 +21,7 @@ class ToolDefinition:
     name: str
     description: str
     handler: str
-    input_schema: JsonDict
+    input_schema: Dict[str, Any]
     examples: List[str] = field(default_factory=list)
     deprecated: bool = False
     version: str = "1.0.0"
@@ -185,6 +183,96 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "required": ["name"]
             }
         ),
+        ToolDefinition(
+            name="switch_session",
+            description="Switch between sessions or snapshots with optional crossfade",
+            handler="session_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session or snapshot ID to switch to"
+                    },
+                    "crossfade_ms": {
+                        "type": "integer",
+                        "description": "Crossfade duration in milliseconds",
+                        "default": 0
+                    }
+                },
+                "required": ["session_id"]
+            }
+        ),
+        ToolDefinition(
+            name="list_sessions",
+            description="List all available sessions and snapshots",
+            handler="session_tools",
+            input_schema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        ToolDefinition(
+            name="delete_session",
+            description="Delete a session or snapshot (cannot delete active session)",
+            handler="session_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session or snapshot ID to delete"
+                    }
+                },
+                "required": ["session_id"]
+            }
+        ),
+        ToolDefinition(
+            name="export_session",
+            description="Export a session to various formats",
+            handler="session_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session ID to export"
+                    },
+                    "export_path": {
+                        "type": "string",
+                        "description": "Export destination path"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["carxp", "ardour", "reaper"],
+                        "description": "Export format",
+                        "default": "carxp"
+                    }
+                },
+                "required": ["session_id", "export_path"]
+            }
+        ),
+        ToolDefinition(
+            name="import_session",
+            description="Import a session from various formats",
+            handler="session_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "import_path": {
+                        "type": "string",
+                        "description": "Path to import from"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["auto", "carxp", "ardour", "reaper"],
+                        "description": "Import format (auto-detect if 'auto')",
+                        "default": "auto"
+                    }
+                },
+                "required": ["import_path"]
+            }
+        ),
     ]
 
     # Plugin management tools
@@ -266,6 +354,69 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "required": ["plugin_id", "action"]
             }
         ),
+        ToolDefinition(
+            name="scan_plugins",
+            description="Scan directory for plugins",
+            handler="plugin_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "Directory to scan"},
+                    "formats": {"type": "array", "items": {"type": "string"}, "description": "Plugin types to scan"},
+                    "recursive": {"type": "boolean", "default": True}
+                },
+                "required": ["directory"]
+            }
+        ),
+        ToolDefinition(
+            name="batch_process",
+            description="Apply plugin chain to audio file",
+            handler="plugin_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "input_file": {"type": "string", "description": "Input audio file path"},
+                    "plugin_chain": {"type": "array", "items": {"type": "string"}, "description": "Plugin IDs to apply"},
+                    "output_format": {
+                        "type": "object",
+                        "properties": {
+                            "sample_rate": {"type": "integer", "default": 48000},
+                            "bit_depth": {"type": "integer", "default": 24},
+                            "format": {"type": "string", "default": "wav"}
+                        }
+                    },
+                    "normalize": {"type": "boolean", "default": True}
+                },
+                "required": ["input_file", "plugin_chain"]
+            }
+        ),
+        ToolDefinition(
+            name="clone_plugin",
+            description="Clone a plugin with its current settings",
+            handler="plugin_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "string", "description": "Plugin ID to clone"}
+                },
+                "required": ["plugin_id"]
+            }
+        ),
+        ToolDefinition(
+            name="replace_plugin",
+            description="Replace a plugin with another while preserving connections",
+            handler="plugin_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "string", "description": "Plugin ID to replace"},
+                    "new_path": {"type": "string", "description": "Path to new plugin"},
+                    "new_type": {"type": "string", "description": "New plugin type"},
+                    "preserve_connections": {"type": "boolean", "default": True}
+                },
+                "required": ["plugin_id", "new_path", "new_type"]
+            }
+        ),
     ]
 
     # Audio routing tools
@@ -313,6 +464,74 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                         "default": "json"
                     }
                 }
+            }
+        ),
+        ToolDefinition(
+            name="create_bus",
+            description="Create audio bus for grouping",
+            handler="routing_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Bus name"},
+                    "channels": {"type": "integer", "description": "Number of channels (1-8)", "default": 2},
+                    "plugins": {"type": "array", "items": {"type": "string"}, "description": "Plugins to route through bus"}
+                },
+                "required": ["name"]
+            }
+        ),
+        ToolDefinition(
+            name="setup_sidechain",
+            description="Configure sidechain routing",
+            handler="routing_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "source_plugin": {"type": "string", "description": "Source plugin ID"},
+                    "destination_plugin": {"type": "string", "description": "Destination plugin ID"},
+                    "sidechain_input": {"type": "integer", "description": "Sidechain input index", "default": 0}
+                },
+                "required": ["source_plugin", "destination_plugin"]
+            }
+        ),
+        ToolDefinition(
+            name="disconnect_audio",
+            description="Disconnect audio connection",
+            handler="routing_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "connection_id": {"type": "string", "description": "Connection ID to disconnect"}
+                },
+                "required": ["connection_id"]
+            }
+        ),
+        ToolDefinition(
+            name="create_send",
+            description="Create send/return effect routing",
+            handler="routing_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "source_plugin": {"type": "string", "description": "Source plugin ID"},
+                    "send_plugin": {"type": "string", "description": "Send destination plugin ID"},
+                    "amount": {"type": "number", "description": "Send amount (0.0 to 1.0)", "default": 0.5},
+                    "pre_fader": {"type": "boolean", "description": "Pre-fader send", "default": False}
+                },
+                "required": ["source_plugin", "send_plugin"]
+            }
+        ),
+        ToolDefinition(
+            name="set_connection_gain",
+            description="Adjust connection gain level",
+            handler="routing_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "connection_id": {"type": "string", "description": "Connection ID"},
+                    "gain": {"type": "number", "description": "Gain in dB"}
+                },
+                "required": ["connection_id", "gain"]
             }
         ),
     ]
@@ -423,6 +642,74 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "required": ["plugin_id", "parameter_id"]
             }
         ),
+        ToolDefinition(
+            name="create_macro",
+            description="Create macro control for multiple parameters",
+            handler="parameter_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "targets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "plugin_id": {"type": "string"},
+                                "param_id": {"type": "integer"},
+                                "range": {"type": "object"},
+                                "curve": {"type": "string"}
+                            }
+                        }
+                    }
+                },
+                "required": ["name", "targets"]
+            }
+        ),
+        ToolDefinition(
+            name="record_automation",
+            description="Record parameter automation in real-time",
+            handler="parameter_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "string", "description": "Plugin ID"},
+                    "parameters": {"type": "array", "items": {"type": "integer"}, "description": "Parameter IDs to record"},
+                    "duration_ms": {"type": "integer", "description": "Recording duration in milliseconds"},
+                    "quantize": {"type": "boolean", "description": "Quantize to tempo", "default": False}
+                },
+                "required": ["plugin_id", "parameters", "duration_ms"]
+            }
+        ),
+        ToolDefinition(
+            name="randomize_parameters",
+            description="Randomly adjust plugin parameters for creative exploration",
+            handler="parameter_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "string", "description": "Plugin ID"},
+                    "amount": {"type": "number", "description": "Randomization amount (0.0 to 1.0)", "default": 0.5},
+                    "exclude_parameters": {"type": "array", "items": {"type": "integer"}, "description": "Parameters to exclude from randomization"}
+                },
+                "required": ["plugin_id"]
+            }
+        ),
+        ToolDefinition(
+            name="morph_parameters",
+            description="Smoothly morph between parameter states",
+            handler="parameter_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "string", "description": "Plugin ID"},
+                    "target_state": {"type": "object", "description": "Target parameter values"},
+                    "duration_ms": {"type": "integer", "description": "Morph duration in milliseconds", "default": 1000},
+                    "curve": {"type": "string", "enum": ["linear", "exponential", "sine"], "default": "linear"}
+                },
+                "required": ["plugin_id", "target_state"]
+            }
+        ),
     ]
 
     # Analysis tools
@@ -496,6 +783,29 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "required": ["plugin_ids"]
             }
         ),
+        ToolDefinition(
+            name="detect_feedback",
+            description="Detect feedback loops in routing",
+            handler="analysis_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "sensitivity": {"type": "number", "description": "Detection sensitivity (0-1)", "default": 0.8}
+                }
+            }
+        ),
+        ToolDefinition(
+            name="analyze_latency",
+            description="Measure system and plugin latencies",
+            handler="analysis_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "measure_plugins": {"type": "boolean", "default": True},
+                    "measure_hardware": {"type": "boolean", "default": True}
+                }
+            }
+        ),
     ]
 
     # JACK routing tools
@@ -560,6 +870,43 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "required": ["source", "destination"]
             }
         ),
+        ToolDefinition(
+            name="get_jack_connections",
+            description="Get connections for a JACK port or all connections",
+            handler="jack_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "port": {"type": "string", "description": "Specific port to check (or None for all)"}
+                }
+            }
+        ),
+        ToolDefinition(
+            name="connect_system_to_plugin",
+            description="Connect system audio to/from a plugin",
+            handler="jack_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "integer", "description": "Plugin ID in Carla"},
+                    "connect_input": {"type": "boolean", "description": "Connect system capture to plugin input", "default": True},
+                    "connect_output": {"type": "boolean", "description": "Connect plugin output to system playback", "default": False}
+                },
+                "required": ["plugin_id"]
+            }
+        ),
+        ToolDefinition(
+            name="connect_plugin_to_system",
+            description="Connect plugin output to system playback",
+            handler="jack_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {"type": "integer", "description": "Plugin ID in Carla"}
+                },
+                "required": ["plugin_id"]
+            }
+        ),
     ]
 
     # Hardware interface tools
@@ -592,6 +939,28 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                         "description": "Audio driver (JACK, ALSA, etc.)"
                     }
                 }
+            }
+        ),
+        ToolDefinition(
+            name="map_control_surface",
+            description="Configure MIDI control surface mapping",
+            handler="hardware_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "description": "Control surface device name"},
+                    "mapping_preset": {"type": "string", "description": "Optional preset name"},
+                    "custom_mapping": {
+                        "type": "object",
+                        "description": "Custom control mappings",
+                        "properties": {
+                            "cc_mappings": {"type": "array"},
+                            "button_mappings": {"type": "array"},
+                            "fader_mappings": {"type": "array"}
+                        }
+                    }
+                },
+                "required": ["device_name"]
             }
         ),
     ]
