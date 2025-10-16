@@ -80,6 +80,13 @@ Ask an AI assistant to help with professional audio tasks:
 - Control surface mapping
 - Monitor calibration support
 
+### 🎓 **MixAssist Integration**
+
+- Direct access to the [MixAssist research dataset](https://arxiv.org/html/2507.06329v1)
+- Professional audio engineering conversations database
+- Real-world mixing advice and techniques from experts
+- Contextual mixing guidance and troubleshooting resources
+
 ## 🚀 Installation
 
 ### Prerequisites
@@ -180,6 +187,8 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 }
 ```
 
+**Quick Setup**: Copy the provided `.mcp.json.example` file and adjust paths for your system.
+
 ### Natural Language Examples
 
 Once connected to an LLM, you can use natural language for complex audio tasks:
@@ -278,8 +287,10 @@ carla-mcp-server/
 ├── server.py              # Main MCP server
 ├── carla_controller.py     # Carla backend wrapper
 ├── tool_registry.py       # Tool registration system
-├── types.py               # Type definitions
+├── carla_types.py         # Type definitions and schemas
 ├── base_tools.py          # Base tool framework
+├── mixassist_resources.py # MixAssist dataset integration
+├── mixassist_schema.py    # MixAssist data schemas
 ├── tools/                 # MCP tool implementations
 │   ├── session_tools.py   # Session management
 │   ├── plugin_tools.py    # Plugin control
@@ -293,7 +304,8 @@ carla-mcp-server/
 │   ├── cpu_monitor.py     # Performance monitoring
 │   └── event_monitor.py   # Event streaming
 ├── tests/                 # Comprehensive test suite
-└── config/                # Configuration files
+├── .mcp.json.example      # Example MCP configuration
+└── LICENSE                # GPL-2.0-or-later license
 ```
 
 ### Running Tests
@@ -400,10 +412,10 @@ pre-commit run --all-files
 
 - `automate_parameter` - Create automation curves
 - `map_midi_cc` - MIDI controller mapping
-- `create_macro` - Multi-parameter macros
-- `record_automation` - Capture parameter changes
 - `set_parameter` - Set plugin parameter values directly
 - `get_parameter` - Get plugin parameter values and info
+- `create_macro` - Multi-parameter macros
+- `record_automation` - Capture parameter changes
 - `randomize_parameters` - Creative randomization
 - `morph_parameters` - Smooth parameter transitions
 
@@ -411,7 +423,7 @@ pre-commit run --all-files
 
 - `analyze_spectrum` - FFT spectrum analysis
 - `measure_levels` - Peak/RMS/LUFS metering
-- `capture_plugin_parameters` - Parameter monitoring
+- `capture_plugin_parameters` - Parameter monitoring over time
 - `detect_feedback` - Feedback loop detection
 - `analyze_latency` - System latency measurement
 

@@ -31,6 +31,7 @@ from tools.jack_tools import JackTools
 from monitors.event_monitor import EventMonitor
 from monitors.audio_monitor import AudioMonitor
 from monitors.cpu_monitor import CPUMonitor
+from monitors.ambient_stream import AmbientStreamLogger
 from mixassist_resources import mixassist_provider
 
 # Configure logging
@@ -79,6 +80,7 @@ class CarlaMCPServer:
         self.event_monitor = EventMonitor(self.carla)
         self.audio_monitor = AudioMonitor(self.carla)
         self.cpu_monitor = CPUMonitor(self.carla)
+        self.ambient_stream = AmbientStreamLogger(self.carla, self.event_monitor)
         
         # Performance metrics
         self.metrics = {
@@ -179,11 +181,14 @@ class CarlaMCPServer:
         async def handle_read_resource(uri: str) -> str:
             """Read content from a resource"""
             try:
+                # Convert AnyUrl to string if needed
+                uri_str = str(uri)
+
                 # Route MixAssist resources
-                if uri.startswith("mixassist://"):
-                    return mixassist_provider.get_resource_content(uri)
+                if uri_str.startswith("mixassist://"):
+                    return mixassist_provider.get_resource_content(uri_str)
                 else:
-                    raise ValueError(f"Unknown resource URI: {uri}")
+                    raise ValueError(f"Unknown resource URI: {uri_str}")
 
             except Exception as e:
                 logger.error(f"Failed to read resource {uri}: {str(e)}")
@@ -191,7 +196,10 @@ class CarlaMCPServer:
 
     async def _execute_tool(self, name: str, arguments: dict) -> dict:
         """Execute a specific tool"""
-        
+
+        # Log user command to ambient stream
+        self.ambient_stream.log_user_command(name, arguments)
+
         # Add context to arguments
         arguments['session_context'] = self.get_active_session()
         arguments['performance_metrics'] = self.get_performance_metrics()
@@ -256,19 +264,23 @@ class CarlaMCPServer:
     
     async def run(self):
         """Run the MCP server"""
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="Carla MCP Server",
-                    server_version="1.0.0",
-                    capabilities=self.server.get_capabilities(
-                        notification_options=NotificationOptions(),
-                        experimental_capabilities={},
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    InitializationOptions(
+                        server_name="Carla MCP Server",
+                        server_version="1.0.0",
+                        capabilities=self.server.get_capabilities(
+                            notification_options=NotificationOptions(),
+                            experimental_capabilities={},
+                        ),
                     ),
-                ),
-            )
+                )
+        finally:
+            # Clean shutdown of ambient stream
+            self.ambient_stream.close()
 
 
 async def main():

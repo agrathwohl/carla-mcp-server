@@ -290,7 +290,7 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                     },
                     "type": {
                         "type": "string",
-                        "enum": ["VST2", "VST3", "LV2", "LADSPA", "AU"],
+                        "enum": ["VST2", "VST3", "LV2", "LADSPA", "AU", "JACK"],
                         "description": "Plugin type"
                     },
                     "position": {

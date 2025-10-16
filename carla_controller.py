@@ -72,6 +72,7 @@ class CarlaController:
         
         # State tracking
         self.engine_running = False
+        self.session_id = "default"  # Default session ID, can be set by session tools
         self.plugins: Dict[int, Dict[str, Any]] = {}
         self.connections: List[Dict[str, Any]] = []
         self.buses: Dict[str, Dict[str, Any]] = {}
@@ -118,25 +119,45 @@ class CarlaController:
         # Validate bridge binaries exist
         self._validate_bridges(bin_path)
         
-        # Configure Wine for Windows VST support
+        # Configure Wine for Windows VST support - FULLY ENABLED
         wine_path = self._find_wine()
         if wine_path:
             # Validate Wine is working
             if self._validate_wine(wine_path):
                 self.host.set_engine_option(ENGINE_OPTION_WINE_EXECUTABLE, 0, wine_path)
                 self.host.set_engine_option(ENGINE_OPTION_WINE_AUTO_PREFIX, 1, "")
+                self.host.set_engine_option(ENGINE_OPTION_WINE_FALLBACK_PREFIX, 0, os.path.expanduser("~/.wine"))
+                self.host.set_engine_option(ENGINE_OPTION_WINE_RT_PRIO_ENABLED, 1, "")
+                self.host.set_engine_option(ENGINE_OPTION_WINE_BASE_RT_PRIO, 15, "")
+                self.host.set_engine_option(ENGINE_OPTION_WINE_SERVER_RT_PRIO, 10, "")
+                logger.info(f"Wine fully configured: {wine_path}")
             else:
                 logger.warning("Wine validation failed - Windows VST support disabled")
+        else:
+            logger.warning("Wine not found - Windows VST support disabled")
         
         # Set default options
         self.host.set_engine_option(ENGINE_OPTION_PROCESS_MODE, ENGINE_PROCESS_MODE_MULTIPLE_CLIENTS, "")
         self.host.set_engine_option(ENGINE_OPTION_FORCE_STEREO, 0, "")
         self.host.set_engine_option(ENGINE_OPTION_PREFER_PLUGIN_BRIDGES, 0, "")  # DISABLED: Direct loading like standalone script
-        self.host.set_engine_option(ENGINE_OPTION_PREFER_UI_BRIDGES, 0, "")      # DISABLED: Direct UI like standalone script
+        self.host.set_engine_option(ENGINE_OPTION_PREFER_UI_BRIDGES, 1, "")      # ENABLED: Required for Wine VST UIs
         self.host.set_engine_option(ENGINE_OPTION_MAX_PARAMETERS, 500, "")
         self.host.set_engine_option(ENGINE_OPTION_UI_BRIDGES_TIMEOUT, 8000, "")
         self.host.set_engine_option(ENGINE_OPTION_AUDIO_BUFFER_SIZE, 512, "")
         self.host.set_engine_option(ENGINE_OPTION_AUDIO_SAMPLE_RATE, 48000, "")
+
+        # Enable OSC support with sane defaults
+        self.host.set_engine_option(ENGINE_OPTION_OSC_ENABLED, 1, "")
+        self.host.set_engine_option(ENGINE_OPTION_OSC_PORT_TCP, 22752, "")  # Default Carla TCP port
+        self.host.set_engine_option(ENGINE_OPTION_OSC_PORT_UDP, 22753, "")  # Default Carla UDP port
+
+        # Set JACK client name prefix to session ID
+        session_prefix = f"CarlaMCP_{getattr(self, 'session_id', 'default')}"
+        self.host.set_engine_option(ENGINE_OPTION_CLIENT_NAME_PREFIX, 0, session_prefix)
+
+        # Enable security and performance options
+        self.host.set_engine_option(ENGINE_OPTION_PREVENT_BAD_BEHAVIOUR, 1, "")  # Linux security
+        self.host.set_engine_option(ENGINE_OPTION_UIS_ALWAYS_ON_TOP, 1, "")  # UI management
     
     def _setup_default_callback(self):
         """Set up default engine callback for event handling"""
@@ -797,5 +818,17 @@ class CarlaController:
             'buffer_size': self.host.get_buffer_size() if self.engine_running else 0,
             'plugin_count': len(self.plugins),
             'cpu_load': self.get_cpu_load(),
-            'xruns': self.xruns
+            'xruns': self.xruns,
+            'session_id': self.session_id
         }
+
+    def set_session_id(self, session_id: str) -> None:
+        """Update session ID and reconfigure JACK client name prefix
+
+        Args:
+            session_id: New session identifier
+        """
+        self.session_id = session_id
+        session_prefix = f"CarlaMCP_{session_id}"
+        self.host.set_engine_option(ENGINE_OPTION_CLIENT_NAME_PREFIX, 0, session_prefix)
+        logger.info(f"Session ID updated to: {session_id}, JACK prefix: {session_prefix}")
