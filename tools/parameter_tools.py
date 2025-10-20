@@ -11,6 +11,7 @@ import threading
 from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import uuid
+from base_tools import validate_plugin_id, validate_parameter_id
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +79,11 @@ class ParameterTools:
             Automation information
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             # Get parameter info
             param_info = self.carla.get_parameter_info(plugin_id, parameter_id)
-            
+
             # Generate automation ID
             automation_id = str(uuid.uuid4())
             
@@ -268,11 +266,8 @@ class ParameterTools:
             Mapping information
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             # Validate CC number
             if cc_number < 0 or cc_number > 127:
                 raise ValueError("CC number must be between 0 and 127")
@@ -406,11 +401,8 @@ class ParameterTools:
             Recorded automation data
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             # Generate recording ID
             recording_id = str(uuid.uuid4())
             
@@ -512,14 +504,11 @@ class ParameterTools:
             Parameter update result
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             # Get parameter info
             param_info = self.carla.get_parameter_info(plugin_id, parameter_id)
-            
+
             # Set the parameter
             self.carla.set_parameter(plugin_id, parameter_id, value)
             
@@ -557,11 +546,8 @@ class ParameterTools:
             Parameter value and info
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             # Get parameter info and value
             param_info = self.carla.get_parameter_info(plugin_id, parameter_id)
             value = self.carla.get_parameter(plugin_id, parameter_id)
@@ -601,11 +587,8 @@ class ParameterTools:
             Randomization result
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             exclude = exclude or []
             param_count = self.carla.host.get_parameter_count(plugin_id)
             randomized = []
@@ -670,11 +653,8 @@ class ParameterTools:
             Morphing result
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             # Get current state
             current_state = {}
             for param_id, target_value in target_state.items():

@@ -12,8 +12,42 @@ from pathlib import Path
 import threading
 import wave
 import numpy as np
+from carla_controller import PluginType
+from base_tools import validate_plugin_id
 
 logger = logging.getLogger(__name__)
+
+# Plugin type string to enum mapping
+PLUGIN_TYPE_MAP = {
+    'VST2': PluginType.VST2,
+    'VST3': PluginType.VST3,
+    'LV2': PluginType.LV2,
+    'LADSPA': PluginType.LADSPA,
+    'DSSI': PluginType.DSSI,
+    'AU': PluginType.AU,
+    'SF2': PluginType.SF2,
+    'SFZ': PluginType.SFZ,
+    'JACK': PluginType.JACK
+}
+
+
+def parse_plugin_type(type_str: str) -> PluginType:
+    """Convert plugin type string to PluginType enum.
+
+    Args:
+        type_str: Plugin type as string (case-insensitive)
+
+    Returns:
+        PluginType enum value
+
+    Raises:
+        ValueError: If plugin type is unknown
+    """
+    plugin_type = PLUGIN_TYPE_MAP.get(type_str.upper())
+    if plugin_type is None:
+        valid_types = ', '.join(PLUGIN_TYPE_MAP.keys())
+        raise ValueError(f"Unknown plugin type '{type_str}'. Valid types: {valid_types}")
+    return plugin_type
 
 
 class PluginTools:
@@ -78,25 +112,10 @@ class PluginTools:
             if not self.carla.engine_running:
                 if not self.carla.start_engine():
                     raise Exception("Failed to start Carla engine - cannot load plugins")
-            
+
             # Convert type string to enum
-            from carla_controller import PluginType
-            plugin_type_map = {
-                'VST2': PluginType.VST2,
-                'VST3': PluginType.VST3,
-                'LV2': PluginType.LV2,
-                'LADSPA': PluginType.LADSPA,
-                'DSSI': PluginType.DSSI,
-                'AU': PluginType.AU,
-                'SF2': PluginType.SF2,
-                'SFZ': PluginType.SFZ,
-                'JACK': PluginType.JACK
-            }
-            
-            plugin_type = plugin_type_map.get(type.upper())
-            if plugin_type is None:
-                raise ValueError(f"Unknown plugin type: {type}")
-            
+            plugin_type = parse_plugin_type(type)
+
             # Load the plugin
             plugin_id = self.carla.load_plugin(path, plugin_type, preset=preset)
             
@@ -268,18 +287,18 @@ class PluginTools:
     async def control_plugin(self, plugin_id: str, action: str, fade_ms: int = 0,
                            session_context: dict = None, **kwargs) -> dict:
         """Control plugin state
-        
+
         Args:
             plugin_id: Plugin ID
             action: Action to perform (activate, bypass, solo, remove)
             fade_ms: Fade time in milliseconds
-            
+
         Returns:
             New plugin state
         """
         try:
-            plugin_id = int(plugin_id)
-            
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
+
             if action == "activate":
                 if fade_ms > 0:
                     # Fade in
@@ -487,18 +506,15 @@ class PluginTools:
     
     async def get_plugin_info(self, plugin_id: str, session_context: dict = None, **kwargs) -> dict:
         """Get detailed plugin information
-        
+
         Args:
             plugin_id: Plugin ID
-            
+
         Returns:
             Detailed plugin information
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
             
             # Get basic info
             info = self.carla.host.get_plugin_info(plugin_id)
@@ -560,18 +576,15 @@ class PluginTools:
     
     async def clone_plugin(self, plugin_id: str, session_context: dict = None, **kwargs) -> dict:
         """Clone a plugin with its current settings
-        
+
         Args:
             plugin_id: Plugin ID to clone
-            
+
         Returns:
             New plugin information
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
             
             # Clone the plugin
             success = self.carla.host.clone_plugin(plugin_id)
@@ -606,21 +619,18 @@ class PluginTools:
     async def replace_plugin(self, plugin_id: str, new_path: str, new_type: str,
                            preserve_connections: bool = True, session_context: dict = None, **kwargs) -> dict:
         """Replace a plugin with another while preserving connections
-        
+
         Args:
             plugin_id: Plugin ID to replace
             new_path: Path to new plugin
             new_type: New plugin type
             preserve_connections: Preserve audio connections
-            
+
         Returns:
             Replacement result
         """
         try:
-            plugin_id = int(plugin_id)
-            
-            if plugin_id not in self.carla.plugins:
-                raise Exception(f"Plugin not found: {plugin_id}")
+            plugin_id = validate_plugin_id(plugin_id, self.carla)
             
             # Store current connections if preserving
             connections = []
@@ -632,24 +642,12 @@ class PluginTools:
             
             # Remove old plugin
             success = self.carla.remove_plugin(plugin_id)
-            
+
             if not success:
                 raise Exception(f"Failed to remove plugin {plugin_id}")
-            
-            # Load new plugin at same position
-            from carla_controller import PluginType
-            plugin_type_map = {
-                'VST2': PluginType.VST2,
-                'VST3': PluginType.VST3,
-                'LV2': PluginType.LV2,
-                'LADSPA': PluginType.LADSPA
-            }
-            
-            plugin_type = plugin_type_map.get(new_type.upper())
-            if plugin_type is None:
-                raise ValueError(f"Unknown plugin type: {new_type}")
-            
-            # Load new plugin
+
+            # Convert type string to enum and load new plugin
+            plugin_type = parse_plugin_type(new_type)
             new_plugin_id = self.carla.load_plugin(new_path, plugin_type)
             
             if new_plugin_id is None:

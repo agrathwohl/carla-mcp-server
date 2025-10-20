@@ -90,9 +90,9 @@ class CarlaController:
         self.idle_running = False
         
         logger.info(f"CarlaController initialized with library: {self.lib_path}")
-        
-        # START THE FUCKING ENGINE RIGHT NOW
-        logger.info("INITIALIZING JACK ENGINE...")
+
+        # Initialize JACK engine automatically on startup
+        logger.info("Initializing JACK engine...")
         if not self.host.engine_init("JACK", "CarlaMCP"):
             logger.error("FAILED TO INITIALIZE JACK ENGINE!")
             raise RuntimeError("Cannot initialize JACK engine - is JACK running?")

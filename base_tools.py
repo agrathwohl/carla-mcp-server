@@ -8,12 +8,22 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Callable, Any, Optional
+from typing import Dict, Callable, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
-# Remove broken import - these types are not defined
+if TYPE_CHECKING:
+    from carla_controller import CarlaController
+
+# Type aliases for better code clarity
+JsonDict = Dict[str, Any]
+ToolResult = Dict[str, Any]
 
 logger = logging.getLogger(__name__)
+
+
+class ToolRegistrationError(Exception):
+    """Exception raised when tool registration fails."""
+    pass
 
 
 class BaseToolHandler(ABC):
@@ -235,16 +245,15 @@ def validate_plugin_id(plugin_id: Any, carla_controller: CarlaController) -> int
         Valid integer plugin ID
 
     Raises:
-        ValueError: If plugin ID is invalid
+        ValueError: If plugin ID is invalid or not found
     """
     try:
         plugin_id = int(plugin_id)
     except (ValueError, TypeError):
         raise ValueError(f"Invalid plugin ID: {plugin_id}")
 
-    plugin_count = carla_controller.host.get_current_plugin_count()
-    if plugin_id < 0 or plugin_id >= plugin_count:
-        raise ValueError(f"Plugin ID {plugin_id} out of range (0-{plugin_count-1})")
+    if plugin_id not in carla_controller.plugins:
+        raise ValueError(f"Plugin not found: {plugin_id}")
 
     return plugin_id
 
@@ -273,6 +282,39 @@ def validate_parameter_id(parameter_id: Any, plugin_id: int, carla_controller: C
         raise ValueError(f"Parameter ID {parameter_id} out of range for plugin {plugin_id} (0-{param_count-1})")
 
     return parameter_id
+
+
+def create_success_response(**kwargs) -> ToolResult:
+    """Create a standardized success response.
+
+    Args:
+        **kwargs: Additional fields to include in the response
+
+    Returns:
+        Success response dictionary
+    """
+    return {
+        'success': True,
+        **kwargs
+    }
+
+
+def create_error_response(error: Exception, **kwargs) -> ToolResult:
+    """Create a standardized error response.
+
+    Args:
+        error: Exception that occurred
+        **kwargs: Additional fields to include in the response
+
+    Returns:
+        Error response dictionary
+    """
+    return {
+        'success': False,
+        'error': str(error),
+        'error_type': type(error).__name__,
+        **kwargs
+    }
 
 
 class ToolRegistry:
@@ -347,4 +389,6 @@ __all__ = [
     "safe_execute",
     "validate_plugin_id",
     "validate_parameter_id",
+    "create_success_response",
+    "create_error_response",
 ]

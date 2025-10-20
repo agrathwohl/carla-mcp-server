@@ -7,6 +7,7 @@ Handles external JACK routing that Carla's API doesn't expose
 import logging
 import subprocess
 import re
+import os
 from typing import Dict, Any, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -81,8 +82,8 @@ class JackTools:
                 if "physical" in flags:
                     cmd.append("-p")
             
-            # Execute command
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Execute command with environment
+            result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
             
             if result.returncode != 0:
                 raise Exception(f"jack_lsp failed: {result.stderr}")
@@ -152,7 +153,8 @@ class JackTools:
             result = subprocess.run(
                 ["jack_connect", source, destination],
                 capture_output=True,
-                text=True
+                text=True,
+                env=os.environ
             )
             
             # Check if already connected (exit code 0 or specific error)
@@ -194,7 +196,8 @@ class JackTools:
             result = subprocess.run(
                 ["jack_disconnect", source, destination],
                 capture_output=True,
-                text=True
+                text=True,
+                env=os.environ
             )
             
             if result.returncode != 0 and "not connected" not in result.stderr.lower():
@@ -233,7 +236,8 @@ class JackTools:
                 result = subprocess.run(
                     ["jack_lsp", "-c", port],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=os.environ
                 )
                 
                 if result.returncode != 0:
@@ -256,7 +260,8 @@ class JackTools:
                 result = subprocess.run(
                     ["jack_lsp", "-c"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=os.environ
                 )
                 
                 if result.returncode != 0:
@@ -320,7 +325,8 @@ class JackTools:
                 plugin_inputs = subprocess.run(
                     ["jack_lsp", "-i"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=os.environ
                 ).stdout.strip().split('\n')
                 
                 plugin_inputs = [p for p in plugin_inputs if plugin_name in p]
@@ -329,13 +335,13 @@ class JackTools:
                     # Connect system capture to plugin inputs
                     if len(plugin_inputs) >= 2:
                         # Stereo
-                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]])
-                        subprocess.run(["jack_connect", "system:capture_2", plugin_inputs[1]])
+                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]], env=os.environ)
+                        subprocess.run(["jack_connect", "system:capture_2", plugin_inputs[1]], env=os.environ)
                         connections_made.append(f"system:capture_1 -> {plugin_inputs[0]}")
                         connections_made.append(f"system:capture_2 -> {plugin_inputs[1]}")
                     else:
                         # Mono
-                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]])
+                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]], env=os.environ)
                         connections_made.append(f"system:capture_1 -> {plugin_inputs[0]}")
             
             if connect_output:
@@ -343,7 +349,8 @@ class JackTools:
                 plugin_outputs = subprocess.run(
                     ["jack_lsp", "-o"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=os.environ
                 ).stdout.strip().split('\n')
                 
                 plugin_outputs = [p for p in plugin_outputs if plugin_name in p and "Audio" in p]
@@ -352,14 +359,14 @@ class JackTools:
                     # Connect plugin outputs to system playback
                     if len(plugin_outputs) >= 2:
                         # Stereo
-                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"])
-                        subprocess.run(["jack_connect", plugin_outputs[1], "system:playback_2"])
+                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"], env=os.environ)
+                        subprocess.run(["jack_connect", plugin_outputs[1], "system:playback_2"], env=os.environ)
                         connections_made.append(f"{plugin_outputs[0]} -> system:playback_1")
                         connections_made.append(f"{plugin_outputs[1]} -> system:playback_2")
                     else:
                         # Mono to both channels
-                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"])
-                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_2"])
+                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"], env=os.environ)
+                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_2"], env=os.environ)
                         connections_made.append(f"{plugin_outputs[0]} -> system:playback_1")
                         connections_made.append(f"{plugin_outputs[0]} -> system:playback_2")
             

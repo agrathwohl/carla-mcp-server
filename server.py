@@ -11,8 +11,9 @@ import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Callable
 
-# Add Carla to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'source', 'frontend'))
+# Add Carla to path using CARLA_PATH environment variable
+carla_path = os.environ.get('CARLA_PATH', '/home/gwohl/builds/Carla')
+sys.path.append(os.path.join(carla_path, 'source', 'frontend'))
 
 from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
@@ -34,10 +35,14 @@ from monitors.cpu_monitor import CPUMonitor
 from monitors.ambient_stream import AmbientStreamLogger
 from mixassist_resources import mixassist_provider
 
-# Configure logging
+# Configure logging to file (not stderr) when running as MCP server
+log_file = os.path.join(os.path.dirname(__file__), 'carla_mcp_server.log')
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -287,7 +292,7 @@ async def main():
     """Main entry point"""
     # Check for custom Carla path in environment
     carla_path = os.environ.get('CARLA_PATH')
-    
+
     # Create and run server
     server = CarlaMCPServer(carla_path)
     await server.run()

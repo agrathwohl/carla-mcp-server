@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-COMPLETE TEST SUITE FOR CARLA MCP SERVER
-Tests ALL functionality with REAL Carla API - NO FAKE SHIT
+Complete Test Suite for Carla MCP Server
+
+Tests all functionality with real Carla API integration.
 """
 
 import asyncio
