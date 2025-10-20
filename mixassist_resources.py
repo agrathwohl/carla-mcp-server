@@ -69,52 +69,88 @@ class MixAssistResourceProvider:
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations",
-                name="All Conversations",
-                description="Browse all professional audio engineering conversations",
+                uri="mixassist://index",
+                name="Topic Index",
+                description="List all topics with conversation counts (tiny, <1K tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations/drums",
-                name="Drum Mixing Conversations",
-                description="Conversations focused on drum mixing techniques",
+                uri="mixassist://index/drums",
+                name="Drum Conversation IDs",
+                description="Just conversation IDs for drums (no content, <500 tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations/guitars",
-                name="Guitar Mixing Conversations",
-                description="Conversations focused on guitar mixing techniques",
+                uri="mixassist://index/guitars",
+                name="Guitar Conversation IDs",
+                description="Just conversation IDs for guitars (no content, <500 tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations/bass",
-                name="Bass Mixing Conversations",
-                description="Conversations focused on bass mixing techniques",
+                uri="mixassist://index/bass",
+                name="Bass Conversation IDs",
+                description="Just conversation IDs for bass (no content, <500 tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations/vocals",
-                name="Vocal Mixing Conversations",
-                description="Conversations focused on vocal mixing techniques",
+                uri="mixassist://index/vocals",
+                name="Vocal Conversation IDs",
+                description="Just conversation IDs for vocals (no content, <500 tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations/keys",
-                name="Keys/Piano Mixing Conversations",
-                description="Conversations focused on keyboard and piano mixing",
+                uri="mixassist://index/keys",
+                name="Keys Conversation IDs",
+                description="Just conversation IDs for keys (no content, <500 tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://conversations/overall_mix",
-                name="Overall Mix Conversations",
-                description="Conversations about overall mix balance and mastering",
+                uri="mixassist://index/overall_mix",
+                name="Overall Mix Conversation IDs",
+                description="Just conversation IDs for overall mix (no content, <500 tokens)",
                 mimeType="application/json"
             ),
             types.Resource(
-                uri="mixassist://advice/summary",
-                name="Curated Mixing Advice",
-                description="Summary of key mixing advice from expert conversations",
+                uri="mixassist://advice/drums/top5",
+                name="Top 5 Drum Tips",
+                description="Curated best drum mixing advice (<2K tokens)",
                 mimeType="text/markdown"
+            ),
+            types.Resource(
+                uri="mixassist://advice/guitars/top5",
+                name="Top 5 Guitar Tips",
+                description="Curated best guitar mixing advice (<2K tokens)",
+                mimeType="text/markdown"
+            ),
+            types.Resource(
+                uri="mixassist://advice/bass/top5",
+                name="Top 5 Bass Tips",
+                description="Curated best bass mixing advice (<2K tokens)",
+                mimeType="text/markdown"
+            ),
+            types.Resource(
+                uri="mixassist://advice/vocals/top5",
+                name="Top 5 Vocal Tips",
+                description="Curated best vocal mixing advice (<2K tokens)",
+                mimeType="text/markdown"
+            ),
+            types.Resource(
+                uri="mixassist://advice/keys/top5",
+                name="Top 5 Keys Tips",
+                description="Curated best keys mixing advice (<2K tokens)",
+                mimeType="text/markdown"
+            ),
+            types.Resource(
+                uri="mixassist://advice/overall_mix/top5",
+                name="Top 5 Overall Mix Tips",
+                description="Curated best overall mix advice (<2K tokens)",
+                mimeType="text/markdown"
+            ),
+            types.Resource(
+                uri="mixassist://search",
+                name="Search Conversations",
+                description="Search with query parameter, returns top 10 matches (<5K tokens). Use: mixassist://search?q={query}",
+                mimeType="application/json"
             )
         ]
 
@@ -125,15 +161,32 @@ class MixAssistResourceProvider:
         if uri == "mixassist://schema":
             return json.dumps(get_schema_info(), indent=2)
 
-        elif uri == "mixassist://conversations":
-            return self._get_all_conversations_json()
+        elif uri == "mixassist://index":
+            return self._get_topic_index()
 
-        elif uri.startswith("mixassist://conversations/"):
+        elif uri.startswith("mixassist://index/"):
             topic = uri.split("/")[-1]
-            return self._get_conversations_by_topic(topic)
+            return self._get_topic_conversation_ids(topic)
 
-        elif uri == "mixassist://advice/summary":
-            return self._get_curated_advice()
+        elif uri.startswith("mixassist://advice/") and uri.endswith("/top5"):
+            topic = uri.split("/")[-2]
+            return self._get_top5_advice(topic)
+
+        elif uri.startswith("mixassist://conversation/"):
+            conv_id = uri.split("/")[-1]
+            return self._get_single_conversation(conv_id)
+
+        elif uri.startswith("mixassist://search"):
+            # Parse query parameter
+            if "?" in uri:
+                query = uri.split("?q=")[-1] if "?q=" in uri else ""
+                return self._search_conversations(query)
+            else:
+                return json.dumps({
+                    "error": "Missing query parameter",
+                    "usage": "mixassist://search?q={your_search_term}",
+                    "example": "mixassist://search?q=compression"
+                })
 
         else:
             raise ValueError(f"Unknown resource URI: {uri}")
@@ -213,6 +266,156 @@ class MixAssistResourceProvider:
                 matching_conversations.append(conv)
 
         return matching_conversations
+
+    def _get_topic_index(self) -> str:
+        """Get index of all topics with counts (tiny resource)"""
+        index_data = {}
+        for topic in MixingTopic:
+            convs = [c for c in self._conversations if c.topic == topic]
+            index_data[topic.value] = {
+                "count": len(convs),
+                "sample_ids": [c.conversation_id for c in convs[:3]]  # Just 3 sample IDs
+            }
+
+        return json.dumps({
+            "total_conversations": len(self._conversations),
+            "topics": index_data,
+            "usage": "Use mixassist://index/{topic} to get all conversation IDs for a topic"
+        }, indent=2)
+
+    def _get_topic_conversation_ids(self, topic: str) -> str:
+        """Get all conversation IDs for a topic (no content, just IDs)"""
+        convs = [c for c in self._conversations if c.topic.value == topic]
+
+        return json.dumps({
+            "topic": topic,
+            "count": len(convs),
+            "conversation_ids": [c.conversation_id for c in convs],
+            "usage": f"Use mixassist://conversation/{{conv_id}} to get full conversation content"
+        }, indent=2)
+
+    def _get_single_conversation(self, conv_id: str) -> str:
+        """Get one full conversation by ID (single conversation only)"""
+        conv = next((c for c in self._conversations if c.conversation_id == conv_id), None)
+        if not conv:
+            raise ValueError(f"Conversation {conv_id} not found")
+
+        return json.dumps({
+            "conversation_id": conv.conversation_id,
+            "topic": conv.topic.value,
+            "turn_id": conv.turn_id,
+            "user": conv.user,
+            "assistant": conv.assistant,
+            "keywords": conv.get_context_keywords(),
+            "full_context": conv.get_full_context()
+        }, indent=2)
+
+    def _get_top5_advice(self, topic: str) -> str:
+        """Get curated top 5 mixing advice for a topic (small resource)"""
+        topic_convs = [c for c in self._conversations if c.topic.value == topic]
+
+        # Select top 5 by quality heuristics:
+        # 1. Technical terminology usage = most valuable
+        # 2. Longer assistant responses = more detailed advice
+        # 3. More keywords = more technical content
+
+        # High-value audio engineering terms
+        premium_terms = [
+            'eq', 'compression', 'compressor', 'limiting', 'limiter',
+            'reverb', 'multiband', 'attack', 'release', 'threshold',
+            'ratio', 'hz', 'khz', 'filter', 'frequency', 'db',
+            'sidechain', 'parallel', 'automation', 'transient',
+            'saturation', 'harmonics', 'phase', 'stereo', 'mono'
+        ]
+
+        scored_convs = []
+        for conv in topic_convs:
+            score = 0
+            text = f"{conv.user} {conv.assistant}".lower()
+
+            # Count premium technical terms (heavily weighted)
+            premium_count = sum(1 for term in premium_terms if term in text)
+            score += premium_count * 500
+
+            # Longer responses get higher score
+            score += len(conv.assistant) * 0.5
+
+            # More keywords = more technical depth
+            score += len(conv.get_context_keywords()) * 100
+
+            # Penalize very short responses
+            if len(conv.assistant) < 100:
+                score *= 0.1
+
+            scored_convs.append((score, conv))
+
+        # Sort by score descending and take top 5
+        scored_convs.sort(key=lambda x: x[0], reverse=True)
+        top_convs = [conv for score, conv in scored_convs[:5]]
+
+        markdown = f"# Top {len(top_convs)} {topic.replace('_', ' ').title()} Mixing Tips\n\n"
+        markdown += f"**Selected from {len(topic_convs)} professional conversations**\n"
+        markdown += f"*(Ranked by detail level and technical depth)*\n\n"
+
+        for i, conv in enumerate(top_convs, 1):
+            # Truncate long user questions for readability
+            user_preview = conv.user[:80] + "..." if len(conv.user) > 80 else conv.user
+            markdown += f"## {i}. {user_preview}\n\n"
+            markdown += f"{conv.assistant}\n\n"
+            markdown += f"*Keywords: {', '.join(conv.get_context_keywords()[:5])}*\n\n"
+            markdown += "---\n\n"
+
+        return markdown
+
+    def _search_conversations(self, query: str, limit: int = 10) -> str:
+        """Search conversations and return top matches (limited results)"""
+        if not query:
+            return json.dumps({
+                "error": "Empty query",
+                "usage": "Provide search term in query parameter"
+            })
+
+        query_lower = query.lower()
+        scored_matches = []
+
+        for conv in self._conversations:
+            text = f"{conv.user} {conv.assistant}".lower()
+
+            if query_lower in text:
+                # Score by relevance
+                score = 0
+                # Exact phrase matches get higher score
+                score += text.count(query_lower) * 100
+                # Keywords match
+                if query_lower in [k.lower() for k in conv.get_context_keywords()]:
+                    score += 200
+                # Length of response (more detail = higher score)
+                score += len(conv.assistant) * 0.1
+
+                scored_matches.append((score, conv))
+
+        # Sort by relevance and take top N
+        scored_matches.sort(key=lambda x: x[0], reverse=True)
+        top_matches = scored_matches[:limit]
+
+        results = []
+        for score, conv in top_matches:
+            results.append({
+                "conversation_id": conv.conversation_id,
+                "topic": conv.topic.value,
+                "relevance_score": int(score),
+                "user_preview": conv.user[:100] + "..." if len(conv.user) > 100 else conv.user,
+                "assistant_preview": conv.assistant[:200] + "..." if len(conv.assistant) > 200 else conv.assistant,
+                "keywords": conv.get_context_keywords()[:5]
+            })
+
+        return json.dumps({
+            "query": query,
+            "total_matches": len(scored_matches),
+            "showing": len(results),
+            "results": results,
+            "usage": "Use mixassist://conversation/{conv_id} to get full conversation"
+        }, indent=2)
 
 # Global instance for use in MCP server
 mixassist_provider = MixAssistResourceProvider()
