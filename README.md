@@ -155,6 +155,22 @@ Ask an AI assistant to help with professional audio tasks:
    python -c "import carla_backend; print('Carla integration working!')"
    ```
 
+4. **(Optional) Setup MixAssist Dataset**
+
+   The MixAssist dataset provides professional audio engineering advice and is optional but recommended:
+
+   ```bash
+   # Download and configure MixAssist dataset
+   python setup_mixassist.py --download
+
+   # This will:
+   # - Download 640 professional mixing conversations
+   # - Create .env configuration file
+   # - Enable MixAssist MCP resources
+   ```
+
+   For detailed instructions, see [MIXASSIST_SETUP.md](MIXASSIST_SETUP.md)
+
 ## 🎮 Usage
 
 ### Quick Start

@@ -150,11 +150,11 @@ class SessionTools:
             }
             
             self.active_session = session_id
-            
+
             logger.info(f"Loaded session {session_id}: {path}")
             if warnings:
                 logger.warning(f"Session loaded with warnings: {warnings}")
-            
+
             result = {
                 'success': True,
                 'session_id': session_id,

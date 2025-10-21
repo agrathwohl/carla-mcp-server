@@ -10,19 +10,89 @@ from typing import List, Dict, Any, Optional
 from dataclasses import asdict
 from mixassist_schema import MixAssistConversation, MixingTopic, InputHistoryItem, get_schema_info
 import mcp.types as types
+import logging
+from config_loader import get_config
+
+logger = logging.getLogger(__name__)
+
 
 class MixAssistResourceProvider:
     """Provides MCP resources for accessing MixAssist dataset"""
 
-    def __init__(self, dataset_path: str = "/mnt/Media/MixAssist/data"):
-        self.dataset_path = Path(dataset_path)
+    def __init__(self, dataset_path: Optional[str] = None):
+        """Initialize MixAssist resource provider
+
+        Args:
+            dataset_path: Path to dataset directory (optional, will use config if not provided)
+        """
+        # Load from config if not provided
+        if dataset_path is None:
+            config = get_config()
+            dataset_path = config.get('MIXASSIST_DATASET_PATH')
+
+            # Check if MixAssist is enabled
+            self._enabled = config.get_bool('MIXASSIST_ENABLED', default=True)
+        else:
+            self._enabled = True
+
+        self.dataset_path = Path(dataset_path) if dataset_path else None
         self._conversations: Optional[List[MixAssistConversation]] = None
         self._loaded = False
+        self._available = self._check_availability()
+
+        if not self._available:
+            logger.warning(
+                "MixAssist dataset not available. "
+                "Run 'python setup_mixassist.py --download' to set it up."
+            )
+
+    def _check_availability(self) -> bool:
+        """Check if dataset is available and valid
+
+        Returns:
+            True if dataset is available and can be loaded
+        """
+        if not self._enabled:
+            logger.info("MixAssist resources disabled in configuration")
+            return False
+
+        if self.dataset_path is None:
+            logger.info("MixAssist dataset path not configured")
+            return False
+
+        if not self.dataset_path.exists():
+            logger.warning(f"MixAssist dataset path does not exist: {self.dataset_path}")
+            return False
+
+        # Check for required parquet files
+        required_splits = ["train", "test", "validation"]
+        for split in required_splits:
+            parquet_file = self.dataset_path / f"{split}-00000-of-00001.parquet"
+            if not parquet_file.exists():
+                logger.warning(f"Missing MixAssist split: {parquet_file}")
+                return False
+
+        logger.info(f"MixAssist dataset available at: {self.dataset_path}")
+        return True
+
+    def is_available(self) -> bool:
+        """Check if MixAssist resources are available
+
+        Returns:
+            True if resources can be provided
+        """
+        return self._available
 
     def _load_dataset(self) -> None:
         """Load and parse the MixAssist dataset"""
         if self._loaded:
             return
+
+        if not self._available:
+            raise RuntimeError(
+                "MixAssist dataset not available. "
+                "Run 'python setup_mixassist.py --download' to set it up."
+            )
 
         conversations = []
 
@@ -61,6 +131,10 @@ class MixAssistResourceProvider:
 
     def get_available_resources(self) -> List[types.Resource]:
         """Get list of available MCP resources"""
+        # Return empty list if dataset not available
+        if not self._available:
+            return []
+
         return [
             types.Resource(
                 uri="mixassist://schema",
@@ -156,6 +230,13 @@ class MixAssistResourceProvider:
 
     def get_resource_content(self, uri: str) -> str:
         """Get content for a specific MCP resource"""
+        if not self._available:
+            return json.dumps({
+                "error": "MixAssist dataset not available",
+                "message": "Run 'python setup_mixassist.py --download' to download and configure the dataset",
+                "uri": uri
+            }, indent=2)
+
         self._load_dataset()
 
         if uri == "mixassist://schema":

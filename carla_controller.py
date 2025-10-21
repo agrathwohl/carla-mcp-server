@@ -431,7 +431,7 @@ class CarlaController:
 
             # Pre-validation: For LV2, validate URI format
             elif plugin_type == PluginType.LV2:
-                if not path or not path.startswith("http"):
+                if not path or not (path.startswith("http") or path.startswith("urn:")):
                     logger.error(f"Cannot load LV2 plugin: Invalid URI format - {path}")
                     return None
 
