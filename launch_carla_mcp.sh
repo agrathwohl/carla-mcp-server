@@ -19,7 +19,7 @@ if [ ! -f "$CARLA_PATH/bin/libcarla_standalone2.so" ]; then
 fi
 
 # Verify Python backend can be imported
-python3 -c "
+uv run python -c "
 import sys
 sys.path.append('$CARLA_PATH/source/frontend')
 from carla_backend import *
@@ -38,4 +38,4 @@ echo ""
 
 # Start the MCP server
 cd "$(dirname "$0")"
-python3 server.py "$@"
+uv run python server.py "$@"

@@ -6,6 +6,7 @@ Audio Analysis Tools for Carla MCP Server
 import logging
 import numpy as np
 import time
+import asyncio
 from typing import Dict, Any, List, Optional, Union
 from scipy import signal
 
@@ -164,41 +165,48 @@ class AnalysisTools:
                 import time
                 history = []
                 
+                # Determine sampling interval - adaptive with 250ms minimum
+                if capture_duration_ms and int(capture_duration_ms) > 30000:
+                    interval_ms = 5000  # 5 seconds for very long captures
+                elif capture_duration_ms and int(capture_duration_ms) > 10000:
+                    interval_ms = 1000  # 1 second for medium captures (10-30s)
+                elif capture_duration_ms:
+                    # For captures under 10 seconds, use 250ms minimum
+                    interval_ms = 250  # 250ms minimum as required
+                else:
+                    interval_ms = 10  # Default for simple mode
+
                 # Determine capture mode and duration
                 if capture_duration_ms:
-                    # Duration-based capture
-                    # For long captures, use a longer sampling interval
-                    if int(capture_duration_ms) > 30000:  # More than 30 seconds
-                        samples = int(capture_duration_ms) // 5000  # Sample every 5 seconds
-                    else:
-                        samples = int(capture_duration_ms) // 10  # Sample every 10ms
+                    # Duration-based capture - calculate samples from interval
+                    samples = int(capture_duration_ms) // interval_ms
                     capture_mode = "duration"
                 elif silence_threshold_db is not None:
                     # Threshold-based capture (max 60 seconds)
-                    samples = 6000  # Max 60 seconds worth
+                    samples = 60000 // interval_ms  # Max based on interval
                     capture_mode = "threshold"
                     consecutive_below = 0
                 else:
                     # Simple history mode
-                    samples = min(10, window_ms // 10)
+                    samples = min(10, window_ms // interval_ms)
                     capture_mode = "simple"
                 
-                # Determine sampling interval
-                if int(capture_duration_ms) > 30000:
-                    interval_ms = 5000  # 5 seconds for long captures
-                else:
-                    interval_ms = 10  # 10ms for short captures
-                
-                # Capture loop
+                # Capture loop - wrap blocking calls in thread pool
+                async def capture_peak_sample(i):
+                    """Capture a single peak sample in thread pool"""
+                    def _capture():
+                        snapshot = self.carla.get_audio_peaks(plugin_id)
+                        current_peak_db = max(
+                            20 * np.log10(snapshot['out_left'] + 1e-10),
+                            20 * np.log10(snapshot['out_right'] + 1e-10)
+                        )
+                        return snapshot, current_peak_db
+
+                    return await asyncio.to_thread(_capture)
+
                 for i in range(samples):
-                    snapshot = self.carla.get_audio_peaks(plugin_id)
-                    
-                    # Calculate current peak in dB
-                    current_peak_db = max(
-                        20 * np.log10(snapshot['out_left'] + 1e-10),
-                        20 * np.log10(snapshot['out_right'] + 1e-10)
-                    )
-                    
+                    snapshot, current_peak_db = await capture_peak_sample(i)
+
                     history.append({
                         'time_ms': i * interval_ms,
                         'out_left': snapshot['out_left'],
@@ -207,7 +215,7 @@ class AnalysisTools:
                         'in_right': snapshot['in_right'],
                         'peak_db': current_peak_db
                     })
-                    
+
                     # Check threshold stop condition
                     if capture_mode == "threshold" and silence_threshold_db is not None:
                         if current_peak_db < silence_threshold_db:
@@ -218,8 +226,9 @@ class AnalysisTools:
                                 break
                         else:
                             consecutive_below = 0
-                    
-                    time.sleep(interval_ms / 1000.0)  # Sleep for the interval
+
+                    # Yield control to event loop
+                    await asyncio.sleep(interval_ms / 1000.0)
                 
                 result['history'] = history
                 result['capture_mode'] = capture_mode
@@ -236,18 +245,18 @@ class AnalysisTools:
                 'error': str(e)
             }
     
-    async def capture_plugin_parameters(self, plugin_ids: Union[int, List[int]], 
+    async def capture_plugin_parameters(self, plugin_ids: Union[int, List[int]],
                                        capture_duration_ms: int = 10000,
                                        sampling_interval_ms: int = 100,
                                        session_context: dict = None, **kwargs) -> dict:
         """
         Capture all parameter values from one or more plugins over time
-        
+
         Args:
             plugin_ids: Single plugin ID or list of plugin IDs to capture
             capture_duration_ms: Total duration to capture (default 10 seconds)
             sampling_interval_ms: Time between samples (default 100ms)
-            
+
         Returns:
             Dictionary with parameter history for each plugin
         """
@@ -260,30 +269,77 @@ class AnalysisTools:
                     plugin_ids = json.loads(plugin_ids)
                 else:
                     plugin_ids = int(plugin_ids)
-            
+
             # Ensure plugin_ids is a list
             if isinstance(plugin_ids, int):
                 plugin_ids = [plugin_ids]
-            
+
             # Validate all plugin IDs exist
             for pid in plugin_ids:
                 if pid not in self.carla.plugins:
                     raise ValueError(f"Invalid plugin ID: {pid}")
-            
+
+            # Filter out plugins with no capturable data
+            skipped_plugins = []
+            capturable_plugins = []
+
+            for pid in plugin_ids:
+                param_count = self.carla.host.get_parameter_count(pid)
+                plugin_name = self.carla.plugins[pid]['name']
+
+                if param_count == 0:
+                    # No parameters at all
+                    skipped_plugins.append({
+                        'id': pid,
+                        'name': plugin_name,
+                        'reason': 'No parameters - pure visualization plugin'
+                    })
+                    continue
+
+                # Check for OUTPUT parameters (type=2)
+                has_output_params = False
+                for i in range(param_count):
+                    data = self.carla.host.get_parameter_data(pid, i)
+                    if data and data.get('type', 0) == 2:  # PARAMETER_OUTPUT
+                        has_output_params = True
+                        break
+
+                if not has_output_params:
+                    # Only INPUT parameters - no meter data to capture
+                    skipped_plugins.append({
+                        'id': pid,
+                        'name': plugin_name,
+                        'reason': f'No OUTPUT parameters - only {param_count} control parameters (no meter data)'
+                    })
+                else:
+                    capturable_plugins.append(pid)
+
+            # Use filtered list
+            plugin_ids = capturable_plugins
+
             import time
-            
+
             # Calculate number of samples
             samples = int(capture_duration_ms / sampling_interval_ms)
-            
+
             # Initialize result structure
             result = {
                 'success': True,
                 'capture_duration_ms': capture_duration_ms,
                 'sampling_interval_ms': sampling_interval_ms,
                 'samples': samples,
-                'plugins': {}
+                'plugins': {},
+                'skipped_plugins': skipped_plugins,
+                'capturable_count': len(plugin_ids),
+                'skipped_count': len(skipped_plugins)
             }
-            
+
+            # Early exit if nothing to capture
+            if len(plugin_ids) == 0:
+                result['success'] = False
+                result['error'] = 'All plugins skipped - no capturable meter data (need OUTPUT parameters)'
+                return result
+
             # Initialize plugin data structures
             for pid in plugin_ids:
                 plugin_info = self.carla.plugins[pid]
@@ -311,31 +367,47 @@ class AnalysisTools:
                     'history': []
                 }
             
-            # Capture loop
+            # Capture loop - run in thread pool to avoid blocking
+            async def capture_sample(sample_idx):
+                """Capture a single sample in thread pool"""
+                def _capture():
+                    sample_time = sample_idx * sampling_interval_ms
+                    samples_data = {}
+
+                    # Capture all parameters for all plugins
+                    for pid in plugin_ids:
+                        param_count = self.carla.host.get_parameter_count(pid)
+                        sample_data = {
+                            'time_ms': sample_time,
+                            'values': {}
+                        }
+
+                        # Read all parameter values
+                        for param_idx in range(param_count):
+                            value = self.carla.host.get_current_parameter_value(pid, param_idx)
+                            param_name = result['plugins'][pid]['parameters'][param_idx]['name']
+                            sample_data['values'][param_name] = value
+                            # Also store by index for easier access
+                            sample_data['values'][f'param_{param_idx}'] = value
+
+                        samples_data[pid] = sample_data
+
+                    return samples_data
+
+                # Run in thread pool to avoid blocking event loop
+                return await asyncio.to_thread(_capture)
+
+            # Capture all samples
             for sample_idx in range(samples):
-                sample_time = sample_idx * sampling_interval_ms
-                
-                # Capture all parameters for all plugins
-                for pid in plugin_ids:
-                    param_count = self.carla.host.get_parameter_count(pid)
-                    sample_data = {
-                        'time_ms': sample_time,
-                        'values': {}
-                    }
-                    
-                    # Read all parameter values
-                    for param_idx in range(param_count):
-                        value = self.carla.host.get_current_parameter_value(pid, param_idx)
-                        param_name = result['plugins'][pid]['parameters'][param_idx]['name']
-                        sample_data['values'][param_name] = value
-                        # Also store by index for easier access
-                        sample_data['values'][f'param_{param_idx}'] = value
-                    
+                samples_data = await capture_sample(sample_idx)
+
+                # Store results
+                for pid, sample_data in samples_data.items():
                     result['plugins'][pid]['history'].append(sample_data)
-                
-                # Sleep until next sample time
-                if sample_idx < samples - 1:  # Don't sleep after last sample
-                    time.sleep(sampling_interval_ms / 1000.0)
+
+                # Sleep between samples
+                if sample_idx < samples - 1:
+                    await asyncio.sleep(sampling_interval_ms / 1000.0)
             
             # Add summary statistics for each plugin
             for pid in plugin_ids:

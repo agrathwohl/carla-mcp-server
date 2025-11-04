@@ -11,10 +11,10 @@ server:
 carla:
   # Path to Carla installation
   path: /home/gwohl/builds/Carla
-  
+
   # Path to Carla library
   library: /home/gwohl/builds/Carla/bin/libcarla_standalone2.so
-  
+
   # Wine configuration for Windows VST support
   wine:
     executable: /usr/bin/wine
@@ -24,16 +24,16 @@ carla:
 audio:
   # Audio driver (JACK, ALSA, PulseAudio, Dummy)
   driver: JACK
-  
+
   # Client name for JACK
   client_name: CarlaMCP
-  
+
   # Audio settings
   sample_rate: 48000
   buffer_size: 512
   channels_in: 2
   channels_out: 2
-  
+
   # Processing options
   force_stereo: false
   triple_buffer: false
@@ -42,30 +42,21 @@ plugins:
   # Plugin scanning paths
   scan_paths:
     # Native Linux plugins
-    - /usr/lib/lv2
-    - /usr/lib/ladspa
-    - /usr/lib/dssi
-    - /usr/lib/vst
-    - /usr/local/lib/lv2
+    - /run/current-system/sw/lib/lv2
     - ~/.lv2
 
-    # NixOS plugin paths
-    - /nix/store/73qs3fmp5wdxplqrckky45s6mx4dafmi-zam-plugins-4.4/lib/lv2
-    - /nix/store/ayk0ilmpq4xaswbpjgh4ddjajx107q27-x42-plugins-20250512/lib/lv2
-    - /nix/store/9mya5f7hcan72fd67bcb8l6l12p9381l-swh-lv2-1.0.16/lib/lv2
-    
     # Windows VST via Wine
     - ~/.wine/drive_c/Program Files/Steinberg/VSTPlugins
     - ~/.wine/drive_c/Program Files/Common Files/VST2
     - ~/.wine/drive_c/Program Files/Common Files/VST3
     - ~/.wine/drive_c/Program Files/VSTPlugins
-  
+
   # Plugin options
   prefer_bridges: true
   ui_bridges: true
   max_parameters: 500
   ui_bridge_timeout: 8000
-  
+
   # Plugin cache
   cache:
     enabled: true
@@ -73,27 +64,27 @@ plugins:
 
 monitoring:
   # Audio monitoring
-  meter_rate: 30  # Hz
-  meter_history: 100  # samples
-  
+  meter_rate: 30 # Hz
+  meter_history: 100 # samples
+
   # CPU monitoring
-  cpu_interval: 1.0  # seconds
-  cpu_history: 300  # samples (5 minutes)
-  
+  cpu_interval: 1.0 # seconds
+  cpu_history: 300 # samples (5 minutes)
+
   # Thresholds
-  cpu_warning: 80  # percent
-  peak_warning: -3  # dB
-  xrun_threshold: 5  # xruns before warning
+  cpu_warning: 80 # percent
+  peak_warning: -3 # dB
+  xrun_threshold: 5 # xruns before warning
 
 automation:
   # Automation settings
   resolution_ms: 10
   max_duration_ms: 60000
-  
+
   # Recording
   record_resolution_ms: 10
   max_recording_ms: 300000
-  
+
   # Smoothing
   smoothing_enabled: true
   smoothing_factor: 0.8
@@ -101,9 +92,9 @@ automation:
 session:
   # Session management
   auto_save: true
-  auto_save_interval: 300  # seconds
+  auto_save_interval: 300 # seconds
   backup_count: 5
-  
+
   # Snapshot storage
   snapshot_dir: ~/.carla-mcp/snapshots
   max_snapshots: 50
@@ -112,11 +103,11 @@ performance:
   # Performance optimization
   parallel_operations: true
   max_parallel: 4
-  
+
   # Caching
   cache_enabled: true
-  cache_ttl: 3600  # seconds
-  
+  cache_ttl: 3600 # seconds
+
   # Resource limits
   max_plugins: 256
   max_connections: 1024
@@ -130,9 +121,10 @@ security:
     - /home
     - /usr/lib
     - /usr/local/lib
-  
+
   # Network
   allow_remote: false
   allowed_hosts:
     - localhost
     - 127.0.0.1
+

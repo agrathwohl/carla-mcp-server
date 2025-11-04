@@ -2,3 +2,6 @@
   - When successful show the results of the action taken, if relevant
   - When failure occurs, indicate with a RED X and also provide context for the error if helpful
 
+- [ ] Fix the list jack ports tool's filtering feature. it never works
+
+- [ ]

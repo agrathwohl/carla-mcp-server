@@ -7,6 +7,7 @@ import os
 import time
 import logging
 import subprocess
+import yaml
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import threading
@@ -127,7 +128,7 @@ class PluginTools:
             
             # Get parameter list
             parameters = self.carla.list_parameters(plugin_id)
-            
+
             # Get I/O configuration using the correct API methods
             audio_info = self.carla.host.get_audio_port_count_info(plugin_id)
             midi_info = self.carla.host.get_midi_port_count_info(plugin_id)
@@ -150,12 +151,14 @@ class PluginTools:
                 'io_config': io_config
             }
             
-            logger.info(f"Loaded plugin {plugin_id}: {info.get('name', path) if info else path}")
+            plugin_name = info.get('name', Path(path).stem) if info else Path(path).stem
+            
+            logger.info(f"Loaded plugin {plugin_id}: {plugin_name}")
             
             return {
                 'success': True,
                 'plugin_id': plugin_id,
-                'name': info.get('name', Path(path).stem) if info else Path(path).stem,
+                'name': plugin_name,
                 'maker': info.get('maker', 'Unknown') if info else 'Unknown',
                 'category': info.get('category', 'Unknown') if info else 'Unknown',
                 'parameters': len(parameters),
@@ -173,101 +176,104 @@ class PluginTools:
     async def scan_plugins(self, directory: str, formats: Optional[List[str]] = None,
                           recursive: bool = True, session_context: dict = None, **kwargs) -> dict:
         """Scan directory for plugins
-        
+
         Args:
             directory: Directory to scan
             formats: Plugin formats to scan (None for all)
             recursive: Scan recursively
-            
+
         Returns:
             List of found plugins
         """
+        import asyncio
+        from pathlib import Path
+
         try:
             if formats is None:
                 formats = ['VST2', 'VST3', 'LV2']
-            
+
             found_plugins = []
             errors = []
-            
+
             # Define file extensions for each format
             format_extensions = {
                 'VST2': ['.dll', '.so', '.dylib'],
                 'VST3': ['.vst3'],
                 'LV2': ['.lv2'],
                 'LADSPA': ['.so'],
-                'DSSI': ['.so']
+                'DSSI': ['.so'],
+                'CLAP': ['.clap']
             }
-            
-            # Scan directory
+
             path = Path(directory)
-            
+
             if not path.exists():
                 raise Exception(f"Directory not found: {directory}")
-            
-            # Get all files
-            if recursive:
-                files = list(path.rglob('*'))
-            else:
-                files = list(path.glob('*'))
-            
-            # Filter by format
-            for file_path in files:
-                # Check files for VST2, LADSPA, DSSI plugins
-                if file_path.is_file():
-                    for format_type in formats:
-                        extensions = format_extensions.get(format_type, [])
 
-                        if any(str(file_path).endswith(ext) for ext in extensions):
-                            # Try to get plugin info (quick scan)
-                            plugin_info = {
-                                'path': str(file_path),
-                                'name': file_path.stem,
-                                'format': format_type,
-                                'size': file_path.stat().st_size
-                            }
+            # Run filesystem scan in thread pool (BLOCKING OPERATION)
+            def scan_filesystem():
+                file_plugins = []
 
-                            found_plugins.append(plugin_info)
-                            logger.debug(f"Found {format_type} plugin: {file_path}")
+                # Get all files
+                if recursive:
+                    files = list(path.rglob('*'))
+                else:
+                    files = list(path.glob('*'))
 
-                # Check directories for LV2 and VST3 bundles
-                elif file_path.is_dir():
-                    for format_type in formats:
-                        extensions = format_extensions.get(format_type, [])
+                # Filter by format
+                for file_path in files:
+                    # Check files for VST2, LADSPA, DSSI, CLAP plugins
+                    if file_path.is_file():
+                        for format_type in formats:
+                            extensions = format_extensions.get(format_type, [])
 
-                        if any(str(file_path).endswith(ext) for ext in extensions):
-                            # Calculate directory size
-                            try:
-                                size = sum(f.stat().st_size for f in file_path.rglob('*') if f.is_file())
-                            except:
-                                size = 0
+                            if any(str(file_path).endswith(ext) for ext in extensions):
+                                # Try to get plugin info (quick scan)
+                                plugin_info = {
+                                    'path': str(file_path),
+                                    'name': file_path.stem,
+                                    'format': format_type,
+                                    'size': file_path.stat().st_size
+                                }
 
-                            plugin_info = {
-                                'path': str(file_path),
-                                'name': file_path.stem,
-                                'format': format_type,
-                                'size': size
-                            }
+                                file_plugins.append(plugin_info)
+                                logger.debug(f"Found {format_type} plugin: {file_path}")
 
-                            found_plugins.append(plugin_info)
-                            logger.debug(f"Found {format_type} bundle: {file_path}")
+                    # Check directories for LV2, VST3, CLAP bundles
+                    elif file_path.is_dir():
+                        for format_type in formats:
+                            extensions = format_extensions.get(format_type, [])
 
-                # Legacy VST3 handling (kept for compatibility)
-                elif file_path.is_dir() and file_path.suffix == '.vst3' and 'VST3' in formats:
-                    plugin_info = {
-                        'path': str(file_path),
-                        'name': file_path.stem,
-                        'format': 'VST3',
-                        'size': sum(f.stat().st_size for f in file_path.rglob('*') if f.is_file())
-                    }
-                    
-                    found_plugins.append(plugin_info)
-                    logger.debug(f"Found VST3 bundle: {file_path}")
-            
+                            if any(str(file_path).endswith(ext) for ext in extensions):
+                                # Calculate directory size
+                                try:
+                                    size = sum(f.stat().st_size for f in file_path.rglob('*') if f.is_file())
+                                except:
+                                    size = 0
+
+                                plugin_info = {
+                                    'path': str(file_path),
+                                    'name': file_path.stem,
+                                    'format': format_type,
+                                    'size': size
+                                }
+
+                                file_plugins.append(plugin_info)
+                                logger.debug(f"Found {format_type} bundle: {file_path}")
+
+                return file_plugins
+
+            # Scan filesystem with timeout (BLOCKING OPERATION)
+            found_plugins = await asyncio.wait_for(
+                asyncio.to_thread(scan_filesystem),
+                timeout=60.0  # 60 second timeout for filesystem scan
+            )
+
             # Sort by name
             found_plugins.sort(key=lambda x: x['name'].lower())
-            
+
             logger.info(f"Scanned {directory}: found {len(found_plugins)} plugins")
-            
+
             return {
                 'success': True,
                 'plugins': found_plugins,
@@ -276,7 +282,15 @@ class PluginTools:
                 'errors': errors,
                 'directory': directory
             }
-            
+
+        except asyncio.TimeoutError:
+            logger.error("Scan operation timed out")
+            return {
+                'success': False,
+                'error': 'Scan operation exceeded timeout limit',
+                'plugins': found_plugins if 'found_plugins' in locals() else [],
+                'errors': errors if 'errors' in locals() else []
+            }
         except Exception as e:
             logger.error(f"Failed to scan plugins: {str(e)}")
             return {
@@ -330,6 +344,8 @@ class PluginTools:
                 # Remove from cache
                 if plugin_id in self.plugin_cache:
                     del self.plugin_cache[plugin_id]
+                
+                logger.info(f"Plugin {plugin_id} removed")
                 
                 return {
                     'success': True,

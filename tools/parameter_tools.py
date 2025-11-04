@@ -8,6 +8,7 @@ import time
 import math
 import random
 import threading
+import asyncio
 from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import uuid
@@ -433,9 +434,9 @@ class ParameterTools:
             recording_thread.start()
             
             logger.info(f"Started recording automation for plugin {plugin_id}")
-            
-            # Wait a moment then return initial status
-            time.sleep(0.1)
+
+            # Wait a moment then return initial status (BLOCKING OPERATION FIXED)
+            await asyncio.sleep(0.1)
             
             return {
                 'success': True,
