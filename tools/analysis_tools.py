@@ -94,10 +94,11 @@ class AnalysisTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to analyze audio: {str(e)}")
+            logger.error(f"Failed to analyze audio: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def measure_levels(self, source: str, window_ms: int = 100,
@@ -239,10 +240,11 @@ class AnalysisTools:
             return result
                 
         except Exception as e:
-            logger.error(f"Failed to measure levels: {str(e)}")
+            logger.error(f"Failed to measure levels: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def capture_plugin_parameters(self, plugin_ids: Union[int, List[int]],
@@ -429,10 +431,11 @@ class AnalysisTools:
             return result
             
         except Exception as e:
-            logger.error(f"Failed to capture plugin parameters: {str(e)}")
+            logger.error(f"Failed to capture plugin parameters: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def detect_feedback(self, sensitivity: float = 0.8,
@@ -528,10 +531,11 @@ class AnalysisTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to detect feedback: {str(e)}")
+            logger.error(f"Failed to detect feedback: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def analyze_latency(self, measure_plugins: bool = True,
@@ -600,8 +604,9 @@ class AnalysisTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to analyze latency: {str(e)}")
+            logger.error(f"Failed to analyze latency: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }

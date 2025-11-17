@@ -83,8 +83,11 @@ class JackTools:
                     cmd.append("-p")
             
             # Execute command with environment
-            result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
-            
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ, timeout=5.0)
+            except subprocess.TimeoutExpired:
+                raise Exception("jack_lsp command timed out after 5 seconds")
+
             if result.returncode != 0:
                 raise Exception(f"jack_lsp failed: {result.stderr}")
             
@@ -131,10 +134,11 @@ class JackTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to list JACK ports: {str(e)}")
+            logger.error(f"Failed to list JACK ports: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def connect_jack_ports(self, source: str, destination: str,
@@ -154,7 +158,8 @@ class JackTools:
                 ["jack_connect", source, destination],
                 capture_output=True,
                 text=True,
-                env=os.environ
+                env=os.environ,
+                timeout=5.0
             )
             
             # Check if already connected (exit code 0 or specific error)
@@ -175,10 +180,11 @@ class JackTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to connect JACK ports: {str(e)}")
+            logger.error(f"Failed to connect JACK ports: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def disconnect_jack_ports(self, source: str, destination: str,
@@ -197,7 +203,8 @@ class JackTools:
                 ["jack_disconnect", source, destination],
                 capture_output=True,
                 text=True,
-                env=os.environ
+                env=os.environ,
+                timeout=5.0
             )
             
             if result.returncode != 0 and "not connected" not in result.stderr.lower():
@@ -214,10 +221,11 @@ class JackTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to disconnect JACK ports: {str(e)}")
+            logger.error(f"Failed to disconnect JACK ports: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def get_jack_connections(self, port: Optional[str] = None,
@@ -237,7 +245,8 @@ class JackTools:
                     ["jack_lsp", "-c", port],
                     capture_output=True,
                     text=True,
-                    env=os.environ
+                    env=os.environ,
+                    timeout=5.0
                 )
                 
                 if result.returncode != 0:
@@ -261,7 +270,8 @@ class JackTools:
                     ["jack_lsp", "-c"],
                     capture_output=True,
                     text=True,
-                    env=os.environ
+                    env=os.environ,
+                    timeout=5.0
                 )
                 
                 if result.returncode != 0:
@@ -290,10 +300,11 @@ class JackTools:
                 }
             
         except Exception as e:
-            logger.error(f"Failed to get JACK connections: {str(e)}")
+            logger.error(f"Failed to get JACK connections: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def connect_system_to_plugin(self, plugin_id: int, 
@@ -326,7 +337,8 @@ class JackTools:
                     ["jack_lsp", "-i"],
                     capture_output=True,
                     text=True,
-                    env=os.environ
+                    env=os.environ,
+                    timeout=5.0
                 ).stdout.strip().split('\n')
                 
                 plugin_inputs = [p for p in plugin_inputs if plugin_name in p]
@@ -335,13 +347,13 @@ class JackTools:
                     # Connect system capture to plugin inputs
                     if len(plugin_inputs) >= 2:
                         # Stereo
-                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]], env=os.environ)
-                        subprocess.run(["jack_connect", "system:capture_2", plugin_inputs[1]], env=os.environ)
+                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]], env=os.environ, timeout=5.0)
+                        subprocess.run(["jack_connect", "system:capture_2", plugin_inputs[1]], env=os.environ, timeout=5.0)
                         connections_made.append(f"system:capture_1 -> {plugin_inputs[0]}")
                         connections_made.append(f"system:capture_2 -> {plugin_inputs[1]}")
                     else:
                         # Mono
-                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]], env=os.environ)
+                        subprocess.run(["jack_connect", "system:capture_1", plugin_inputs[0]], env=os.environ, timeout=5.0)
                         connections_made.append(f"system:capture_1 -> {plugin_inputs[0]}")
             
             if connect_output:
@@ -350,7 +362,8 @@ class JackTools:
                     ["jack_lsp", "-o"],
                     capture_output=True,
                     text=True,
-                    env=os.environ
+                    env=os.environ,
+                    timeout=5.0
                 ).stdout.strip().split('\n')
                 
                 plugin_outputs = [p for p in plugin_outputs if plugin_name in p and "Audio" in p]
@@ -359,14 +372,14 @@ class JackTools:
                     # Connect plugin outputs to system playback
                     if len(plugin_outputs) >= 2:
                         # Stereo
-                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"], env=os.environ)
-                        subprocess.run(["jack_connect", plugin_outputs[1], "system:playback_2"], env=os.environ)
+                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"], env=os.environ, timeout=5.0)
+                        subprocess.run(["jack_connect", plugin_outputs[1], "system:playback_2"], env=os.environ, timeout=5.0)
                         connections_made.append(f"{plugin_outputs[0]} -> system:playback_1")
                         connections_made.append(f"{plugin_outputs[1]} -> system:playback_2")
                     else:
                         # Mono to both channels
-                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"], env=os.environ)
-                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_2"], env=os.environ)
+                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_1"], env=os.environ, timeout=5.0)
+                        subprocess.run(["jack_connect", plugin_outputs[0], "system:playback_2"], env=os.environ, timeout=5.0)
                         connections_made.append(f"{plugin_outputs[0]} -> system:playback_1")
                         connections_made.append(f"{plugin_outputs[0]} -> system:playback_2")
             
@@ -379,10 +392,11 @@ class JackTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to connect system to plugin: {str(e)}")
+            logger.error(f"Failed to connect system to plugin: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def connect_plugin_to_system(self, plugin_id: int,

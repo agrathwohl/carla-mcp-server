@@ -22,7 +22,7 @@ class ParameterTools:
     
     def __init__(self, carla_controller):
         """Initialize parameter tools
-        
+
         Args:
             carla_controller: CarlaController instance
         """
@@ -31,7 +31,8 @@ class ParameterTools:
         self.macros = {}
         self.midi_mappings = {}
         self.recording_sessions = {}
-        
+        self.active_threads = []  # Track automation threads for cleanup
+
         logger.info("ParameterTools initialized")
     
     async def execute(self, tool_name: str, arguments: dict) -> dict:
@@ -93,7 +94,8 @@ class ParameterTools:
                 target=self._run_automation,
                 args=(plugin_id, parameter_id, automation_type, duration_ms, values, param_info)
             )
-            
+            automation_thread.daemon = True  # Make daemon so it doesn't block shutdown
+
             # Store automation info
             self.automations[automation_id] = {
                 'id': automation_id,
@@ -106,10 +108,12 @@ class ParameterTools:
                 'running': True,
                 'start_time': time.time()
             }
-            
+
+            self.active_threads.append(automation_thread)  # Track for cleanup
             # Start automation
             automation_thread.start()
-            
+            self.cleanup_finished_threads()  # Clean up old threads
+
             logger.info(f"Started {automation_type} automation for plugin {plugin_id} param {parameter_id}")
             
             # Calculate actual values that will be applied
@@ -129,10 +133,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to automate parameter: {str(e)}")
+            logger.error(f"Failed to automate parameter: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     def _run_automation(self, plugin_id: int, parameter_id: int, automation_type: str,
@@ -211,7 +216,7 @@ class ParameterTools:
             logger.info(f"Completed automation for plugin {plugin_id} param {parameter_id}")
             
         except Exception as e:
-            logger.error(f"Automation error: {str(e)}")
+            logger.error(f"Automation error: {str(e)}", exc_info=True)
     
     def _calculate_automation_values(self, automation_type: str, duration_ms: int,
                                     values: Optional[List[float]], param_info: dict) -> List[float]:
@@ -315,10 +320,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to map MIDI CC: {str(e)}")
+            logger.error(f"Failed to map MIDI CC: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def create_macro(self, name: str, targets: List[dict],
@@ -383,10 +389,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to create macro: {str(e)}")
+            logger.error(f"Failed to create macro: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def record_automation(self, plugin_id: str, parameters: List[int],
@@ -449,10 +456,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to record automation: {str(e)}")
+            logger.error(f"Failed to record automation: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     def _record_parameters(self, recording_id: str, plugin_id: int,
@@ -487,7 +495,7 @@ class ParameterTools:
             logger.info(f"Completed recording {recording_id} with {recording['event_count']} events")
             
         except Exception as e:
-            logger.error(f"Recording error: {str(e)}")
+            logger.error(f"Recording error: {str(e)}", exc_info=True)
             if recording_id in self.recording_sessions:
                 self.recording_sessions[recording_id]['status'] = 'error'
                 self.recording_sessions[recording_id]['error'] = str(e)
@@ -529,10 +537,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to set parameter: {str(e)}")
+            logger.error(f"Failed to set parameter: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def get_parameter(self, plugin_id: str, parameter_id: int,
@@ -568,10 +577,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to get parameter: {str(e)}")
+            logger.error(f"Failed to get parameter: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def randomize_parameters(self, plugin_id: str, amount: float = 0.5,
@@ -635,10 +645,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to randomize parameters: {str(e)}")
+            logger.error(f"Failed to randomize parameters: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def morph_parameters(self, plugin_id: str, target_state: dict,
@@ -667,7 +678,10 @@ class ParameterTools:
                 target=self._morph_parameters,
                 args=(plugin_id, current_state, target_state, duration_ms)
             )
+            morph_thread.daemon = True  # Make daemon so it doesn't block shutdown
+            self.active_threads.append(morph_thread)  # Track for cleanup
             morph_thread.start()
+            self.cleanup_finished_threads()  # Clean up old threads
             
             logger.info(f"Started parameter morphing for plugin {plugin_id}")
             
@@ -680,10 +694,11 @@ class ParameterTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to morph parameters: {str(e)}")
+            logger.error(f"Failed to morph parameters: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     def _morph_parameters(self, plugin_id: int, current_state: dict,
@@ -719,4 +734,9 @@ class ParameterTools:
             logger.info(f"Completed parameter morphing for plugin {plugin_id}")
             
         except Exception as e:
-            logger.error(f"Morphing error: {str(e)}")
+            logger.error(f"Morphing error: {str(e)}", exc_info=True)
+
+    def cleanup_finished_threads(self):
+        """Clean up finished automation threads to prevent memory leaks"""
+        self.active_threads = [t for t in self.active_threads if t.is_alive()]
+        logger.debug(f"Active threads after cleanup: {len(self.active_threads)}")

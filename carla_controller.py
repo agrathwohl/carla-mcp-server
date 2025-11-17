@@ -91,23 +91,42 @@ class CarlaController:
         
         logger.info(f"CarlaController initialized with library: {self.lib_path}")
 
-        # Initialize JACK engine automatically on startup
-        logger.info("Initializing JACK engine...")
-        if not self.host.engine_init("JACK", "CarlaMCP"):
-            logger.error("FAILED TO INITIALIZE JACK ENGINE!")
+        # Initialize JACK engine in background thread to avoid blocking
+        logger.info("Initializing JACK engine in background...")
+        init_thread = threading.Thread(target=self._initialize_engine, daemon=False)
+        init_thread.start()
+        init_thread.join(timeout=10.0)  # Wait max 10 seconds for initialization
+
+        if not self.engine_running:
+            logger.error("FAILED TO INITIALIZE JACK ENGINE (timeout or error)!")
             raise RuntimeError("Cannot initialize JACK engine - is JACK running?")
-        
-        self.engine_running = True
-        
-        # Start the idle processing thread
-        self.idle_running = True
-        self.idle_thread = threading.Thread(target=self._idle_loop, daemon=True)
-        self.idle_thread.start()
-        
-        # Get and log engine info
-        sample_rate = self.host.get_sample_rate()
-        buffer_size = self.host.get_buffer_size()
-        logger.info(f"ENGINE RUNNING! {sample_rate}Hz, {buffer_size} samples buffer")
+
+        logger.info(f"ENGINE RUNNING! Initialization complete")
+
+    def _initialize_engine(self):
+        """Initialize JACK engine (runs in separate thread)"""
+        try:
+            success = self.host.engine_init("JACK", "CarlaMCP")
+
+            if not success:
+                logger.error("FAILED TO INITIALIZE JACK ENGINE!")
+                return
+
+            self.engine_running = True
+
+            # Start the idle processing thread
+            self.idle_running = True
+            self.idle_thread = threading.Thread(target=self._idle_loop, daemon=True)
+            self.idle_thread.start()
+
+            # Get and log engine info
+            sample_rate = self.host.get_sample_rate()
+            buffer_size = self.host.get_buffer_size()
+            logger.info(f"ENGINE INITIALIZED! {sample_rate}Hz, {buffer_size} samples buffer")
+
+        except Exception as e:
+            logger.error(f"Engine initialization error: {e}", exc_info=True)
+            self.engine_running = False
     
     def _configure_engine(self):
         """Configure engine options"""

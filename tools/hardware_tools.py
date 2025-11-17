@@ -108,10 +108,11 @@ class HardwareTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to configure audio interface: {str(e)}")
+            logger.error(f"Failed to configure audio interface: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def list_audio_devices(self, driver: Optional[str] = None,
@@ -130,7 +131,7 @@ class HardwareTools:
             if driver == "JACK" or driver is None:
                 # List JACK devices
                 try:
-                    result = subprocess.run(['jack_lsp'], capture_output=True, text=True)
+                    result = subprocess.run(['jack_lsp'], capture_output=True, text=True, timeout=5.0)
                     if result.returncode == 0:
                         jack_ports = result.stdout.strip().split('\n')
                         devices.append({
@@ -149,7 +150,7 @@ class HardwareTools:
             if driver == "ALSA" or driver is None:
                 # List ALSA devices
                 try:
-                    result = subprocess.run(['aplay', '-l'], capture_output=True, text=True)
+                    result = subprocess.run(['aplay', '-l'], capture_output=True, text=True, timeout=5.0)
                     if result.returncode == 0:
                         # Parse ALSA device list
                         lines = result.stdout.strip().split('\n')
@@ -185,10 +186,11 @@ class HardwareTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to list audio devices: {str(e)}")
+            logger.error(f"Failed to list audio devices: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def map_control_surface(self, device_name: str, mapping_preset: Optional[str] = None,
@@ -227,9 +229,10 @@ class HardwareTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to map control surface: {str(e)}")
+            logger.error(f"Failed to map control surface: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     

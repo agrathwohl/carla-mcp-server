@@ -167,10 +167,11 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to load plugin: {str(e)}")
+            logger.error(f"Failed to load plugin: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def scan_plugins(self, directory: str, formats: Optional[List[str]] = None,
@@ -284,7 +285,7 @@ class PluginTools:
             }
 
         except asyncio.TimeoutError:
-            logger.error("Scan operation timed out")
+            logger.error("Scan operation timed out", exc_info=True)
             return {
                 'success': False,
                 'error': 'Scan operation exceeded timeout limit',
@@ -292,10 +293,11 @@ class PluginTools:
                 'errors': errors if 'errors' in locals() else []
             }
         except Exception as e:
-            logger.error(f"Failed to scan plugins: {str(e)}")
+            logger.error(f"Failed to scan plugins: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def control_plugin(self, plugin_id: str, action: str, fade_ms: int = 0,
@@ -374,15 +376,16 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to control plugin: {str(e)}")
+            logger.error(f"Failed to control plugin: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def _fade_plugin(self, plugin_id: int, start_vol: float, end_vol: float, duration_ms: int):
         """Fade plugin volume
-        
+
         Args:
             plugin_id: Plugin ID
             start_vol: Starting volume (0.0 to 1.0)
@@ -390,20 +393,20 @@ class PluginTools:
             duration_ms: Fade duration in milliseconds
         """
         steps = int(duration_ms / 10)  # 10ms steps
-        
+
         for i in range(steps):
             progress = i / steps
             volume = start_vol + (end_vol - start_vol) * progress
             # Note: Carla doesn't have set_volume method, use internal state
             if plugin_id in self.carla.plugins:
                 self.carla.plugins[plugin_id]['volume'] = volume
-            time.sleep(0.01)
-        
+            await asyncio.sleep(0.01)
+
         # Set final volume
         if plugin_id in self.carla.plugins:
             self.carla.plugins[plugin_id]['volume'] = end_vol
-            # Use Carla's set_volume method
-            self.carla.host.set_volume(plugin_id, end_vol)
+            # Volume is internal parameter 2 (PARAMETER_VOLUME)
+            self.carla.host.set_internal_parameter_value(plugin_id, 2, end_vol)
     
     async def batch_process(self, input_file: str, plugin_chain: List[str],
                           output_format: Optional[dict] = None, normalize: bool = True,
@@ -475,10 +478,11 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to set up plugin chain: {str(e)}")
+            logger.error(f"Failed to set up plugin chain: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def list_plugins(self, session_context: dict = None, **kwargs) -> dict:
@@ -514,10 +518,11 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to list plugins: {str(e)}")
+            logger.error(f"Failed to list plugins: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def get_plugin_info(self, plugin_id: str, session_context: dict = None, **kwargs) -> dict:
@@ -584,10 +589,11 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to get plugin info: {str(e)}")
+            logger.error(f"Failed to get plugin info: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def clone_plugin(self, plugin_id: str, session_context: dict = None, **kwargs) -> dict:
@@ -626,10 +632,11 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to clone plugin: {str(e)}")
+            logger.error(f"Failed to clone plugin: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def replace_plugin(self, plugin_id: str, new_path: str, new_type: str,
@@ -697,8 +704,9 @@ class PluginTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to replace plugin: {str(e)}")
+            logger.error(f"Failed to replace plugin: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }

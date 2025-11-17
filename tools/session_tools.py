@@ -67,19 +67,23 @@ class SessionTools:
         else:
             raise ValueError(f"Unknown session tool: {tool_name}")
     
-    async def load_session(self, path: str, auto_connect: bool = True, 
+    async def load_session(self, path: str, auto_connect: bool = True,
                           session_context: dict = None, **kwargs) -> dict:
         """Load a Carla session
-        
+
         Args:
             path: Path to session file
             auto_connect: Auto-connect JACK ports
-            
+
         Returns:
             Session information
         """
+        # Validate input - path must exist
+        if not os.path.exists(path):
+            return {'success': False, 'error': f'File not found: {path}'}
+
         warnings = []
-        
+
         try:
             # Ensure engine is running
             if not self.carla.engine_running:
@@ -220,10 +224,11 @@ class SessionTools:
             return result
             
         except Exception as e:
-            logger.error(f"Failed to load session: {str(e)}")
+            logger.error(f"Failed to load session: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def save_session(self, path: str, include_samples: bool = True,
@@ -302,7 +307,29 @@ class SessionTools:
                 description="get plugin count"
             )
 
-            return {
+            # Save chat log alongside session file (BLOCKING OPERATION)
+            chat_log_path = None
+            if session_context and 'chat_history' in session_context:
+                chat_log_path = str(Path(path).with_suffix('.chatlog.json'))
+
+                def save_chat_log():
+                    import json
+                    with open(chat_log_path, 'w') as f:
+                        json.dump({
+                            'session_file': path,
+                            'saved_at': datetime.now().isoformat(),
+                            'messages': session_context['chat_history']
+                        }, f, indent=2)
+
+                await run_blocking(
+                    save_chat_log,
+                    timeout=10.0,
+                    description="save chat log"
+                )
+
+                logger.info(f"Saved chat log to: {chat_log_path}")
+
+            result = {
                 'success': True,
                 'path': path,
                 'file_size': file_size,
@@ -311,12 +338,18 @@ class SessionTools:
                 'plugin_count': plugin_count,
                 'session_id': self.active_session
             }
+
+            if chat_log_path:
+                result['chat_log_path'] = chat_log_path
+
+            return result
             
         except Exception as e:
-            logger.error(f"Failed to save session: {str(e)}")
+            logger.error(f"Failed to save session: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def create_snapshot(self, name: str, include_audio_files: bool = False,
@@ -450,10 +483,11 @@ class SessionTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to create snapshot: {str(e)}")
+            logger.error(f"Failed to create snapshot: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def switch_session(self, session_id: str, crossfade_ms: int = 0,
@@ -588,10 +622,11 @@ class SessionTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to switch session: {str(e)}")
+            logger.error(f"Failed to switch session: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def list_sessions(self, session_context: dict = None, **kwargs) -> dict:
@@ -633,10 +668,11 @@ class SessionTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to list sessions: {str(e)}")
+            logger.error(f"Failed to list sessions: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def delete_session(self, session_id: str, session_context: dict = None, **kwargs) -> dict:
@@ -686,10 +722,11 @@ class SessionTools:
                 raise Exception(f"Session not found: {session_id}")
                 
         except Exception as e:
-            logger.error(f"Failed to delete session: {str(e)}")
+            logger.error(f"Failed to delete session: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def export_session(self, session_id: str, export_path: str,
@@ -735,10 +772,11 @@ class SessionTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to export session: {str(e)}")
+            logger.error(f"Failed to export session: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def import_session(self, import_path: str, format: str = "auto",
@@ -778,8 +816,9 @@ class SessionTools:
                 raise ValueError(f"Unknown import format: {format}")
                 
         except Exception as e:
-            logger.error(f"Failed to import session: {str(e)}")
+            logger.error(f"Failed to import session: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }

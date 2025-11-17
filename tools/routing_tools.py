@@ -75,7 +75,19 @@ class RoutingTools:
                 raise Exception(f"Source plugin not found: {source_plugin}")
             if dest_plugin not in self.carla.plugins:
                 raise Exception(f"Destination plugin not found: {dest_plugin}")
-            
+
+            # Validate port indices
+            source_port = source.get('port_index', 0)
+            dest_port = destination.get('port_index', 0)
+
+            source_info = self.carla.host.get_plugin_info(source_plugin)
+            dest_info = self.carla.host.get_plugin_info(dest_plugin)
+
+            if source_info and source_port >= source_info.get('audioOuts', 0):
+                raise Exception(f"Invalid source port index {source_port} for plugin {source_plugin}")
+            if dest_info and dest_port >= dest_info.get('audioIns', 0):
+                raise Exception(f"Invalid destination port index {dest_port} for plugin {dest_plugin}")
+
             # Create connection
             success = self.carla.connect_audio(
                 source_plugin, source.get('port_index', 0),
@@ -114,10 +126,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to connect audio: {str(e)}")
+            logger.error(f"Failed to connect audio: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def create_bus(self, name: str, channels: int = 2, plugins: Optional[List[str]] = None,
@@ -174,10 +187,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to create bus: {str(e)}")
+            logger.error(f"Failed to create bus: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def setup_sidechain(self, source_plugin: str, destination_plugin: str,
@@ -217,7 +231,11 @@ class RoutingTools:
                 source_id, 0,  # Source left output
                 dest_id, sidechain_input + 2  # Sidechain inputs often start at index 2
             )
-            
+
+            # Get channel count from source plugin (defensive access)
+            source_plugin_data = self.carla.plugins.get(source_id, {})
+            channels = source_plugin_data.get('channels', 2)
+
             if channels > 1:
                 # Connect right channel for stereo sidechain
                 self.carla.connect_audio(
@@ -246,10 +264,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to setup sidechain: {str(e)}")
+            logger.error(f"Failed to setup sidechain: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def get_routing_matrix(self, format: str = "json", session_context: dict = None, **kwargs) -> dict:
@@ -310,10 +329,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to get routing matrix: {str(e)}")
+            logger.error(f"Failed to get routing matrix: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def disconnect_audio(self, connection_id: str, session_context: dict = None, **kwargs) -> dict:
@@ -351,10 +371,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to disconnect audio: {str(e)}")
+            logger.error(f"Failed to disconnect audio: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def create_send(self, source_plugin: str, send_plugin: str, amount: float = 0.5,
@@ -403,10 +424,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to create send: {str(e)}")
+            logger.error(f"Failed to create send: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     async def set_connection_gain(self, connection_id: str, gain: float,
@@ -446,10 +468,11 @@ class RoutingTools:
             }
             
         except Exception as e:
-            logger.error(f"Failed to set connection gain: {str(e)}")
+            logger.error(f"Failed to set connection gain: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__
             }
     
     def _create_routing_matrix(self, channels: int) -> List[List[float]]:
