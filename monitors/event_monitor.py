@@ -4,7 +4,6 @@ Event Monitor for Carla MCP Server
 """
 
 import logging
-import asyncio
 from datetime import datetime
 from typing import Dict, Any, List, Callable
 

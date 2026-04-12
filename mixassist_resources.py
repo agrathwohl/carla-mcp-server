@@ -6,8 +6,7 @@ Provides access to professional audio engineering conversations and advice
 import pandas as pd
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from dataclasses import asdict
+from typing import List, Dict, Optional
 from mixassist_schema import MixAssistConversation, MixingTopic, InputHistoryItem, get_schema_info
 import mcp.types as types
 import logging

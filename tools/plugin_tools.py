@@ -3,16 +3,9 @@
 Plugin Control Tools for Carla MCP Server
 """
 
-import os
-import time
 import logging
-import subprocess
-import yaml
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-import threading
-import wave
-import numpy as np
 from carla_controller import PluginType
 from base_tools import validate_plugin_id
 

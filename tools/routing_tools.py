@@ -4,8 +4,7 @@ Audio Routing Tools for Carla MCP Server
 """
 
 import logging
-from typing import Dict, Any, List, Optional, Tuple
-import json
+from typing import List, Optional
 import uuid
 
 logger = logging.getLogger(__name__)

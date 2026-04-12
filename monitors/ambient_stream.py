@@ -6,7 +6,6 @@ for tail -f monitoring during audio sessions.
 """
 
 import os
-import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any
 import logging

@@ -10,9 +10,8 @@ import random
 import threading
 import asyncio
 from typing import Dict, Any, List, Optional, Tuple
-import numpy as np
 import uuid
-from base_tools import validate_plugin_id, validate_parameter_id
+from base_tools import validate_plugin_id
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,6 @@ import numpy as np
 import time
 import asyncio
 from typing import Dict, Any, List, Optional, Union
-from scipy import signal
 
 logger = logging.getLogger(__name__)
 

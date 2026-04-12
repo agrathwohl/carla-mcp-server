@@ -6,9 +6,8 @@ Handles external JACK routing that Carla's API doesn't expose
 
 import logging
 import subprocess
-import re
 import os
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

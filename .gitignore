@@ -1,1 +1,48 @@
-*/__pycache__/
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / Editor
+.claude/
+.serena/
+.mcp.json
+.python-version
+
+# Logs
+*.log
+logs/
+
+# Generated docs
+claudedocs/
+digest.txt
+AUDIO_FUNDAMENTALS.md
+
+# Audio files
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.aiff
+
+# Carla session files
+*.carxp
+*.carxp.backup
+
+# OS
+.DS_Store
+Thumbs.db

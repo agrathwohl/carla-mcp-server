@@ -9,7 +9,7 @@ import logging
 import sys
 import os
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, Optional
 
 # Add Carla to path using CARLA_PATH environment variable
 carla_path = os.environ.get('CARLA_PATH', '/home/gwohl/builds/Carla')

@@ -5,13 +5,10 @@ Session Management Tools for Carla MCP Server
 
 import os
 import json
-import shutil
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
 from pathlib import Path
 import uuid
-import asyncio
 
 from utils import run_blocking, batch_blocking, AsyncFileIO
 
