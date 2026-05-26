@@ -1,0 +1,88 @@
+# Action-text catalog for the experimental fallback profile.
+#
+# Per the README §"Output scheduler design": action-text uses four
+# recognizable ASCII prefixes that carry intensity BEFORE the words land:
+#
+#   >>>  forward motion, vibing, rhythmic engagement
+#   ^^^  raising up, noticing, eyebrow-raise
+#   ***  exclamation, sudden focus
+#   ...  stillness, contemplative attention
+#
+# Catalog is keyed by event type. The scheduler looks up entries for an
+# event's category and samples one without repetition within
+# action_text_repeat_window_seconds (set in the profile).
+#
+# AUTHORING DISCIPLINE (the rules that keep these honest):
+#  - No marketing language (incredible, fire, amazing, perfect, etc.)
+#  - No claimed feelings (I love, this moves me, makes me feel)
+#  - No spoilers (about to, here comes, wait for it)
+#  - No taste claims (this is for me, not my thing)
+#  - Action-text is a SOCIAL MARKER, not an experience claim
+#    (`*nods*` is OK; "I'm vibing" is not — the latter claims an
+#    interior state the agent doesn't have)
+#  - Specific over generic where possible — "head bobbing slowly to the
+#    pulse" beats "vibing"
+#  - Honesty.py's pattern validator runs on every emission as a safety
+#    net; entries that would fail there should be revised before
+#    landing in this catalog.
+#
+# Phase H authoring will add genre-specific catalogs with more entries
+# and tighter event-type granularity. For the experimental fallback,
+# the entries below are deliberately broad ("just notice the change")
+# rather than genre-specific.
+
+# Drift events — measurement diverged from Phase 2 baseline.
+drift_tempo:
+  - { prefix: "^^^", text: "pace shifted" }
+  - { prefix: "^^^", text: "tempo's drifting" }
+  - { prefix: "...", text: "the pulse is wandering" }
+
+drift_dynamic_envelope:
+  - { prefix: "^^^", text: "the level just changed" }
+  - { prefix: ">>>", text: "energy shifting" }
+  - { prefix: "...", text: "the room's getting quieter" }
+  - { prefix: ">>>", text: "fuller now" }
+
+drift_lufs_integrated:
+  - { prefix: "^^^", text: "loudness drifted" }
+  - { prefix: "...", text: "the overall body's changing" }
+
+drift_spectral_centroid:
+  - { prefix: "^^^", text: "the timbre shifted" }
+  - { prefix: "...", text: "going darker" }
+  - { prefix: ">>>", text: "brighter texture" }
+
+drift_onset_density:
+  - { prefix: ">>>", text: "more articulations coming through" }
+  - { prefix: "...", text: "fewer events" }
+
+drift_key:
+  - { prefix: "^^^", text: "harmonic ground shifted" }
+  - { prefix: "***", text: "the center moved" }
+
+# Prediction-error events — model was wrong about what came next.
+prediction_error_tempo:
+  - { prefix: "^^^", text: "didn't expect that tempo" }
+  - { prefix: "***", text: "that's not where I had it" }
+
+prediction_error_dynamic_envelope:
+  - { prefix: "^^^", text: "wider than I had it" }
+  - { prefix: "...", text: "thinner than I expected" }
+  - { prefix: ">>>", text: "fuller body than the model thought" }
+
+prediction_error_lufs_integrated:
+  - { prefix: "^^^", text: "different overall weight than I had" }
+
+prediction_error_spectral_centroid:
+  - { prefix: "^^^", text: "brighter shape than I expected" }
+  - { prefix: "...", text: "darker than the model held" }
+
+prediction_error_onset_density:
+  - { prefix: ">>>", text: "more events than I projected" }
+  - { prefix: "...", text: "sparser than the model had" }
+
+# Generic fallback when no specific event-type catalog matches. Should be
+# rare — every emission ideally hits a specific bucket above.
+generic:
+  - { prefix: ">>>", text: "something just shifted" }
+  - { prefix: "...", text: "the texture moved" }

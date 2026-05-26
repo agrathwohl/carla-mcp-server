@@ -1,0 +1,40 @@
+# Ambient profile — drone, dark ambient, generative, slow-evolving textures.
+#
+# Thresholds are intentionally LOWER than the experimental fallback —
+# ambient music's dynamic range is compressed by genre convention, so even
+# small drifts are musically significant. The agent should be more
+# attentive but speak in shorter forms (action-text dominates over prose).
+#
+# Silence-as-default matters most here. Long stretches without commentary
+# are correct behavior; the scheduler's level-SILENT path is the normal
+# outcome for ambient sections where measurements stay flat.
+
+name: ambient
+description: |
+  Slow-evolving texture music. Low thresholds — small drift is meaningful;
+  small action-text emissions over long prose. Silence is the default
+  rendering of "the texture held steady."
+
+density_by_section:
+  default: 1.0
+
+thresholds:
+  action_text: 0.7
+  exclamation: 1.2
+  observation: 2.0
+  considered: 3.0
+  reflection: 4.5
+
+silence_zones: []
+
+anti_patterns:
+  - "ethereal"
+  - "transports me"
+  - "celestial"
+  - "transcendent"
+  - "spiritual journey"
+  - "otherworldly"
+
+action_text_repeat_window_seconds: 600
+
+action_text_catalog: action_text/ambient.yaml

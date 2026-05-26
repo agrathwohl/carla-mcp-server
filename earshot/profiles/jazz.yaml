@@ -1,0 +1,39 @@
+# Jazz profile — improvised + composed jazz, bebop through fusion.
+#
+# Jazz expects rubato — tempo drift is genre-normal, not eventful. So we
+# slightly RAISE the tempo-event sensitivity by leaving thresholds in the
+# middle of the experimental/edm range while writing catalog entries that
+# treat tempo movement as a craft choice ("they pulled back" / "pushed
+# forward") rather than something is wrong. Key changes are more interesting
+# in jazz than in EDM, so prediction-error catalog entries lean into them.
+
+name: jazz
+description: |
+  Jazz / improvised music profile. Treats tempo drift as performer choice
+  rather than failure; harmonic and dynamic movement gets the analytical
+  attention. Catalog vocabulary borrows from jazz craft language without
+  taste claims.
+
+density_by_section:
+  default: 1.0
+
+thresholds:
+  action_text: 1.0
+  exclamation: 1.5
+  observation: 2.5
+  considered: 4.0
+  reflection: 6.0
+
+silence_zones: []
+
+anti_patterns:
+  - "in the pocket"
+  - "they're cooking"
+  - "smooth as silk"
+  - "tasty"
+  - "killer changes"
+  - "blowing"
+
+action_text_repeat_window_seconds: 400
+
+action_text_catalog: action_text/jazz.yaml

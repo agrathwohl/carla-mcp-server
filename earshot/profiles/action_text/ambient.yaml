@@ -1,0 +1,62 @@
+# Action-text catalog — Ambient profile.
+#
+# Vocabulary draws from sound-as-environment language: field, texture,
+# surface, layer, sustain, fold, settle. Avoids agency-attributing phrasing
+# ("the music wants to...") and any anticipatory phrasing.
+
+drift_tempo:
+  - { prefix: "...", text: "the pulse-rate drifted" }
+  - { prefix: "^^^", text: "the underlying tempo crept" }
+  - { prefix: "...", text: "the rhythm of events slowed" }
+
+drift_dynamic_envelope:
+  - { prefix: "...", text: "the level receded" }
+  - { prefix: ">>>", text: "the body filled in" }
+  - { prefix: "^^^", text: "amplitude expanded" }
+  - { prefix: "...", text: "the layer dropped beneath itself" }
+
+drift_lufs_integrated:
+  - { prefix: "...", text: "overall weight settled lower" }
+  - { prefix: "^^^", text: "loudness floor migrated up" }
+
+drift_spectral_centroid:
+  - { prefix: "...", text: "the texture grew darker" }
+  - { prefix: ">>>", text: "high-frequency shimmer increased" }
+  - { prefix: "^^^", text: "timbre folded inward" }
+  - { prefix: "...", text: "the air thinned" }
+
+drift_onset_density:
+  - { prefix: ">>>", text: "events appeared in the field" }
+  - { prefix: "...", text: "the surface stilled" }
+  - { prefix: "^^^", text: "more articulations in the texture" }
+
+drift_key:
+  - { prefix: "^^^", text: "harmonic center drifted" }
+  - { prefix: "***", text: "the tonality moved" }
+
+prediction_error_tempo:
+  - { prefix: "^^^", text: "pulse drifted from where I had it" }
+  - { prefix: "...", text: "different cadence than the model held" }
+
+prediction_error_dynamic_envelope:
+  - { prefix: "...", text: "quieter than I had it" }
+  - { prefix: "^^^", text: "more presence than the model" }
+  - { prefix: ">>>", text: "fuller than I projected" }
+
+prediction_error_lufs_integrated:
+  - { prefix: "...", text: "lower weight than I projected" }
+  - { prefix: "^^^", text: "more overall body than the model" }
+
+prediction_error_spectral_centroid:
+  - { prefix: "...", text: "darker than I held" }
+  - { prefix: ">>>", text: "more high content than the model" }
+  - { prefix: "^^^", text: "brighter shape than I projected" }
+
+prediction_error_onset_density:
+  - { prefix: ">>>", text: "more events than I projected" }
+  - { prefix: "...", text: "sparser than I held" }
+
+generic:
+  - { prefix: "...", text: "the field shifted" }
+  - { prefix: "^^^", text: "the texture moved" }
+  - { prefix: "...", text: "something at the layer level changed" }

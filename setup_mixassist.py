@@ -50,9 +50,11 @@ def download_dataset(output_dir: Path, force: bool = False) -> bool:
     print(f"   Destination: {output_dir}")
 
     try:
-        # Load dataset from Hugging Face
-        # Dataset: https://huggingface.co/datasets/MixAssist/mixassist
-        dataset = load_dataset("MixAssist/mixassist", trust_remote_code=True)
+        # Load dataset from Hugging Face.
+        # Was at https://huggingface.co/datasets/MixAssist/mixassist;
+        # that namespace stopped hosting it. Now at mclemcrew/MixAssist
+        # (verified via HfApi search, 2026-05-25).
+        dataset = load_dataset("mclemcrew/MixAssist")
 
         print(f"\n✅ Downloaded dataset with {len(dataset)} splits:")
         for split_name, split_data in dataset.items():

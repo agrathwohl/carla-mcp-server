@@ -1,0 +1,58 @@
+# Experimental / fallback profile.
+#
+# When the profile selector (Phase H) can't determine a genre confidently
+# OR no genre-specific profile exists, this is the default. Designed for
+# "surprise-driven, permissive density" per the README — long silences
+# are normal; the agent should only speak when something measurable
+# justifies it.
+#
+# Phase H replaces this fallback with genre-specific authoring once we
+# have diverse Phase 1 ingestions to inform the catalogs. Until then, this
+# is intentionally narrow.
+
+name: experimental
+description: |
+  Surprise-driven, permissive density. Long silences are normal; agent
+  speaks only when prediction error or drift clears the threshold.
+
+# Per-section density targets. Used by the scheduler to weight whether
+# to emit anything during a section type. Values are 0..1 multipliers on
+# the base emission probability — 0.0 means "never speak in this section
+# type", 1.0 means "no extra suppression beyond the score-threshold gate".
+density_by_section:
+  default: 1.0
+  # Future Phase H authoring might add per-genre section labels here.
+
+# Score thresholds for the six-level intensity stack. See
+# earshot/scheduler/intensity.py for the mapping. Permissive defaults
+# match the workflow doc's experimental fallback profile description.
+thresholds:
+  action_text: 1.0      # score >= 1.0 → at least action-text
+  exclamation: 1.5
+  observation: 2.5
+  considered: 4.0
+  reflection: 6.0
+
+# Mandatory silence zones — time windows (track-relative seconds) during
+# which the scheduler emits nothing regardless of event score. Useful for
+# protecting opening/closing material, recognized intro/outro patterns,
+# or quiet sections where commentary would be intrusive.
+#
+# For the experimental fallback we don't pre-assume any silence zones;
+# Phase H profiles for ambient or singer-songwriter genres will populate
+# these (e.g. "no commentary during vocal lines" for vocal-forward music).
+silence_zones: []
+
+# Anti-patterns — additional phrasings to reject beyond the global
+# honesty.py defaults. Profile-specific clichés go here (e.g. an EDM
+# profile might add "feels like an anthem", "main stage energy").
+# The experimental fallback adds nothing genre-specific.
+anti_patterns: []
+
+# How long an action-text phrase is barred from re-use after being
+# emitted. Stops the agent from saying ">>> head bobbing" every 30
+# seconds for an hour. 5 minutes is the README's working default.
+action_text_repeat_window_seconds: 300
+
+# Catalog reference — path is relative to earshot/profiles/.
+action_text_catalog: action_text/experimental.yaml

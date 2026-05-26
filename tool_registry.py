@@ -965,10 +965,464 @@ def create_carla_tool_registry() -> MCPToolRegistry:
         ),
     ]
 
+    # Earshot Phase 1 ingestion tool. Single tool, three return shapes
+    # (complete | needs_plan | error). See earshot/ingest.py for the contract.
+    earshot_tools = [
+        ToolDefinition(
+            name="earshot_ingest_artist",
+            description=(
+                "Phase 1 oeuvre ingestion: scrape an artist's public surface "
+                "(Bandcamp/SoundCloud built-in, arbitrary sites via LLM-planned "
+                "discovery) and produce a structured oeuvre artifact. On unknown "
+                "hosts returns status=needs_plan with a DOM summary; the "
+                "orchestrator emits a scraping plan and re-invokes with plan=<dict>."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Artist profile URL on any host (Bandcamp, SoundCloud, personal site, etc.)",
+                    },
+                    "artist_id": {
+                        "type": "string",
+                        "description": "Optional artist identifier override; defaults to a host-derived slug",
+                    },
+                    "plan": {
+                        "type": "object",
+                        "description": (
+                            "Orchestrator-supplied scraping plan, required only when continuing "
+                            "from a previous needs_plan response for an unknown host. See the "
+                            "plan_schema_doc field in that response for the expected shape."
+                        ),
+                    },
+                    "force_rediscover": {
+                        "type": "boolean",
+                        "description": "Ignore any cached plan and re-run discovery",
+                        "default": False,
+                    },
+                    "force_rerun": {
+                        "type": "boolean",
+                        "description": "Ignore any cached oeuvre artifact and re-ingest from source",
+                        "default": False,
+                    },
+                },
+                "required": ["url"],
+            },
+            examples=[
+                "earshot_ingest_artist(url='https://sonicmultiplicities.bandcamp.com/music')",
+                "earshot_ingest_artist(url='https://soundcloud.com/sonicmultiplicities')",
+                "earshot_ingest_artist(url='https://multipli.city/', plan={...})",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_analyze_track",
+            description=(
+                "Phase 2 track pre-analysis: download (if URL) and produce a "
+                "structured track-context artifact with tempo / key / LUFS / "
+                "LRA / onset rate / spectral centroid / RMS envelope / lyric "
+                "transcription. Heavy lifting runs in the Earshot companion "
+                "venv (essentia + faster-whisper + librosa). Artifact lives "
+                "at ~/.carla-mcp/earshot/tracks/{track_id}/context.json."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "track_url": {
+                        "type": "string",
+                        "description": "Track URL (any source yt-dlp can fetch) or local file path",
+                    },
+                    "artist_id": {
+                        "type": "string",
+                        "description": "Artist identifier the track belongs to (from a prior earshot_ingest_artist call)",
+                    },
+                    "track_id": {
+                        "type": "string",
+                        "description": "Optional track identifier; derived from URL tail if absent",
+                    },
+                    "force_rerun": {
+                        "type": "boolean",
+                        "description": "Ignore any cached context.json and re-analyze",
+                        "default": False,
+                    },
+                },
+                "required": ["track_url", "artist_id"],
+            },
+            examples=[
+                "earshot_analyze_track(track_url='https://sonicmultiplicities.audio/feed/downloads/SM012.flac', artist_id='sonicmultiplicities', track_id='SM012')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_refresh_expectations",
+            description=(
+                "Phase G — orchestrator-side prediction refresh. Called in "
+                "response to a `boundary_approaching` event in the commentary "
+                "queue. Installs per-section predictions in the session's "
+                "expectation tracker; the prediction comparator picks them up "
+                "immediately. Predictions dict keys are Dimension values like "
+                "'tempo', 'dynamic_envelope', 'lufs_integrated'."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Active session id from earshot_start_session",
+                    },
+                    "section_index": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Which Phase 2 section these predictions apply to",
+                    },
+                    "predictions": {
+                        "type": "object",
+                        "description": (
+                            "Map of Dimension.value (e.g. 'tempo', 'dynamic_envelope') → "
+                            "expected scalar value the agent predicts for this section"
+                        ),
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Diagnostic label, default 'orchestrator'",
+                        "default": "orchestrator",
+                    },
+                },
+                "required": ["session_id", "section_index", "predictions"],
+            },
+            examples=[
+                "earshot_refresh_expectations(session_id='abc', section_index=2, predictions={'tempo': 103.5, 'dynamic_envelope': -18.0})",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_submit_commentary",
+            description=(
+                "Phase I — orchestrator submits LLM-generated prose for an "
+                "active session in response to a ProseRequest from the "
+                "commentary queue. Content is validated against honesty rules "
+                "(anti-spoiler, no marketing language, no feeling claims) "
+                "before queueing; rejected submissions return status='rejected' "
+                "with reasons so the orchestrator can revise. Use intensity "
+                "3-6 for prose; intensity 2 is scheduler-only action-text."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "ts_target_user_clock_ms": {
+                        "type": "integer",
+                        "description": "When the prose should land for the user (from the ProseRequest's ts_target)",
+                    },
+                    "intensity": {
+                        "type": "integer", "minimum": 3, "maximum": 6,
+                        "description": "IntensityLevel value (3=exclamation, 6=reflection)",
+                    },
+                    "content": {"type": "string", "description": "The prose to deliver"},
+                    "source_event_id": {"type": "string", "default": ""},
+                    "dimensions": {"type": "array", "items": {"type": "string"}},
+                    "score": {"type": "number", "default": 0.0},
+                },
+                "required": ["session_id", "ts_target_user_clock_ms", "intensity", "content"],
+            },
+            examples=[
+                "earshot_submit_commentary(session_id='abc', ts_target_user_clock_ms=1779200000000, intensity=4, content='the snare just got tight', source_event_id='DriftEvent_1779199995000')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_get_commentary_queue",
+            description=(
+                "Phase I — orchestrator drains the session's commentary queue. "
+                "Returns CommentaryEmissions whose ts_user_clock_ms has arrived "
+                "(ready to deliver to the user) and any pending ProseRequests "
+                "(orchestrator must fulfill via earshot_submit_commentary). "
+                "Supports long-polling via wait_seconds."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "since_ts_ms": {
+                        "type": "integer", "default": 0,
+                        "description": "Only return items with target ts >= this (orchestrator's last-seen marker)",
+                    },
+                    "wait_seconds": {
+                        "type": "number", "default": 0.0,
+                        "description": "0 = non-blocking; >0 = long-poll up to this many seconds",
+                    },
+                },
+                "required": ["session_id"],
+            },
+            examples=[
+                "earshot_get_commentary_queue(session_id='abc', wait_seconds=2.0)",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_start_session",
+            description=(
+                "Phase J — bring up a co-listening session for a previously analyzed track. "
+                "Loads the Phase 2 baseline, selects a profile, builds the comparator + scheduler "
+                "graph, optionally starts an LV2 poller, and registers everything in the session "
+                "registry. Returns the session_id used by all subsequent earshot_* tools."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "track_id": {
+                        "type": "string",
+                        "description": "Track id whose Phase 2 baseline to load (must already exist).",
+                    },
+                    "mode": {
+                        "type": "string", "enum": ["preview", "live"], "default": "preview",
+                        "description": "preview = analyzer-only dry run; live = co-listening with delay tower.",
+                    },
+                    "delay_seconds": {
+                        "type": "number", "default": 5.0,
+                        "description": "Delay-tower buffer; anti-spoiler timing = ts_ms + delay_seconds*1000.",
+                    },
+                    "voice_enabled": {
+                        "type": "boolean", "default": False,
+                        "description": "Whether the orchestrator should render prose via TTS.",
+                    },
+                    "profile_name": {
+                        "type": "string", "default": "experimental",
+                        "description": (
+                            "Profile YAML stem under earshot/profiles/ "
+                            "(experimental|edm|ambient|jazz). Use 'auto' to invoke "
+                            "the Phase H selector against the baseline + oeuvre_hint."
+                        ),
+                    },
+                    "oeuvre_hint": {
+                        "type": "string",
+                        "description": (
+                            "Optional genre / aesthetic hint string passed to the "
+                            "profile selector when profile_name='auto'. Free-form; "
+                            "matched against substrings like 'edm', 'jazz', 'ambient'."
+                        ),
+                    },
+                    "plugin_ids": {
+                        "type": "array", "items": {"type": "integer"},
+                        "description": "Plugin IDs to poll for ambient-stream entries (requires analysis_tools).",
+                    },
+                    "semantics": {
+                        "type": "object",
+                        "description": (
+                            "Map of ambient `type` -> Dimension value (tempo, key, dynamic_envelope, "
+                            "lufs_integrated, spectral_centroid, onset_density). Required for drift + "
+                            "prediction comparators to fire; without it only boundary events reach the "
+                            "scheduler."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "alias": {
+                        "type": "string",
+                        "description": "Explicit session_id; generated if omitted.",
+                    },
+                    "boundary_lookahead_seconds": {
+                        "type": "number", "default": 5.0,
+                        "description": "How far ahead of a section boundary the detector fires.",
+                    },
+                    "poll_interval_ms": {
+                        "type": "integer", "default": 250,
+                        "description": "LV2 polling cadence in milliseconds (250 = 4 Hz).",
+                    },
+                    "companion_audio_file": {
+                        "type": "string",
+                        "description": (
+                            "Path to the source audio file for the Phase C streaming "
+                            "librosa companion. When supplied, spawns the companion "
+                            "subprocess which writes tempo/key/LUFS/onset_density/"
+                            "spectral_centroid entries into the ambient stream. "
+                            "Required if you want tempo + key drift/prediction tracking "
+                            "(the LV2 chain alone covers only dynamics + spectrum)."
+                        ),
+                    },
+                    "companion_chunk_seconds": {
+                        "type": "number", "default": 2.0,
+                        "description": "Companion analysis window length in seconds.",
+                    },
+                    "companion_lookahead_seconds": {
+                        "type": "number", "default": 8.0,
+                        "description": "How far ahead of playback the companion stays.",
+                    },
+                    "sync_to_audio": {
+                        "type": "boolean", "default": True,
+                        "description": (
+                            "When true (and an LV2 poller is producing semantically-mapped "
+                            "data), gate the drift/prediction/boundary components until the "
+                            "first non-silent ambient sample arrives. That sample's ts_ms "
+                            "becomes playback_start_ms — so the timeline aligns with when "
+                            "audio actually starts, not when this tool was called."
+                        ),
+                    },
+                    "sync_monitor_type": {
+                        "type": "string",
+                        "description": (
+                            "Which ambient entry `type` the sync watcher monitors for "
+                            "non-silence. Defaults to the first key in `semantics`."
+                        ),
+                    },
+                    "sync_silence_threshold_db": {
+                        "type": "number", "default": -65.0,
+                        "description": "Values strictly above this count as 'non-silence' (dB-style metrics).",
+                    },
+                    "sync_timeout_s": {
+                        "type": "number", "default": 300.0,
+                        "description": "If no non-silence arrives within this many seconds, give up and start the gated components with the original playback_start_ms.",
+                    },
+                },
+                "required": ["track_id"],
+            },
+            examples=[
+                "earshot_start_session(track_id='SM012', mode='preview')",
+                "earshot_start_session(track_id='SM012', mode='live', delay_seconds=5.0, plugin_ids=[0,1,2,3], semantics={'plugin_2.param_0': 'dynamic_envelope'})",
+                "earshot_start_session(track_id='SM012', mode='live', companion_audio_file='/path/to/SM012.flac', semantics={'tempo_bpm': 'tempo', 'key': 'key', 'lufs_integrated': 'lufs_integrated', 'spectral_centroid': 'spectral_centroid', 'onset_density': 'onset_density'})",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_user_interject",
+            description=(
+                "Phase J — log a user interjection (comment/correction/question) mid-listen. "
+                "Writes a source='user' entry into the session's ambient stream. Durable for "
+                "Phase L reflection."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "text": {"type": "string", "description": "What the user said."},
+                    "kind": {
+                        "type": "string", "default": "comment",
+                        "description": "Free-form label: comment | correction | question | ...",
+                    },
+                },
+                "required": ["session_id", "text"],
+            },
+            examples=[
+                "earshot_user_interject(session_id='abc', text='I love this drop', kind='comment')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_correct_profile",
+            description=(
+                "Phase J — swap the session's active profile mid-listen. Affects all future "
+                "scheduler decisions from the next event onward; already-queued commentary is "
+                "not revoked."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "profile_name": {
+                        "type": "string",
+                        "description": "Profile YAML stem to switch to.",
+                    },
+                },
+                "required": ["session_id", "profile_name"],
+            },
+            examples=[
+                "earshot_correct_profile(session_id='abc', profile_name='experimental')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_end_session",
+            description=(
+                "Phase J — tear down a session and return a summary. Stops components in "
+                "reverse dependency order (producers first, then scheduler, then comparators, "
+                "then writer). The ambient stream JSONL stays on disk for Phase L."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                },
+                "required": ["session_id"],
+            },
+            examples=[
+                "earshot_end_session(session_id='abc')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_reflect_session",
+            description=(
+                "Phase L — generate session reflection artifacts. Reads the "
+                "session's ambient.jsonl + commentary.jsonl, computes structured "
+                "summary stats, and writes reflection_data.json + reflection.md "
+                "to the session's directory. The .md is a skeleton; the "
+                "orchestrator should append a prose synthesis grounded in the "
+                "data file. Works on active OR torn-down sessions (reads disk, "
+                "not the in-memory registry)."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session whose artifacts to reflect on.",
+                    },
+                },
+                "required": ["session_id"],
+            },
+            examples=[
+                "earshot_reflect_session(session_id='earshot_SM012_a1b2c3d4')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_load_analyzer_chain",
+            description=(
+                "Phase K — bring up the Earshot canonical analyzer chain in Carla. "
+                "Loads the saved chain .carxp (default: ~/.carla-mcp/sessions/earshot_analyzer_chain.carxp), "
+                "introspects plugins + parameters, returns a plugin map + derived semantics "
+                "dict (mapping `plugin_{id}.param_{N}` -> Dimension) suitable for "
+                "earshot_start_session. Delay-tower configuration lives in the .carxp; "
+                "this tool does not modify delay params."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "carxp_path": {
+                        "type": "string",
+                        "description": "Override path to the chain .carxp; default uses the canonical saved chain.",
+                    },
+                    "skip_if_loaded": {
+                        "type": "boolean", "default": True,
+                        "description": "If true and plugins are already loaded, introspect them without re-loading.",
+                    },
+                    "include_params": {
+                        "type": "boolean", "default": False,
+                        "description": (
+                            "Include the full per-plugin parameter list. Default False because "
+                            "LSP-family plugins (e.g. art_delay_stereo) carry 700+ params and "
+                            "would blow up the response. Set True only when you actually need "
+                            "to introspect param names/symbols."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+            examples=[
+                "earshot_load_analyzer_chain()",
+                "earshot_load_analyzer_chain(carxp_path='/path/to/custom_chain.carxp', skip_if_loaded=False)",
+                "earshot_load_analyzer_chain(include_params=True)  # full introspection",
+            ],
+        ),
+    ]
+
+
     # Register all tools
     all_tools = (
         session_tools + plugin_tools + routing_tools +
-        parameter_tools + analysis_tools + jack_tools + hardware_tools
+        parameter_tools + analysis_tools + jack_tools + hardware_tools +
+        earshot_tools
     )
 
     for tool in all_tools:

@@ -33,6 +33,10 @@ dependencies = [
     "starlette>=0.27.0",
     "uvicorn>=0.24.0",
     "sse-starlette>=1.6.0",
+    # Earshot Phase 1 ingestion deps (HTTP scraping + DOM parsing)
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
 ]
 
 [project.urls]

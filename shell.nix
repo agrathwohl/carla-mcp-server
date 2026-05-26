@@ -53,7 +53,7 @@ pkgs.mkShell {
     echo ""
 
     # Point to Carla frontend for Python imports
-    export CARLA_PATH="$(pwd)/.."
+    export CARLA_PATH="/home/gwohl/builds/Carla"
     export PYTHONPATH="$CARLA_PATH/source/frontend:$PYTHONPATH"
 
     # Set LD_LIBRARY_PATH so the dynamic linker can find the libs
@@ -79,4 +79,3 @@ pkgs.mkShell {
     "-L${pkgs.liblo}/lib"
   ];
 }
-

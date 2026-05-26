@@ -1,0 +1,67 @@
+# Action-text catalog — EDM profile.
+#
+# Vocabulary leans on structural / DSP language: pulse, kick, sub, low end,
+# transients, build, breakdown. Avoids subjective "feels" claims and any
+# anticipatory phrasing (no "about to drop", "coming up", "next").
+
+drift_tempo:
+  - { prefix: "^^^", text: "the pulse just shifted off the grid" }
+  - { prefix: "***", text: "the BPM moved" }
+  - { prefix: "...", text: "the tempo wandered" }
+  - { prefix: "^^^", text: "the four-on-the-floor stepped sideways" }
+
+drift_dynamic_envelope:
+  - { prefix: ">>>", text: "the level climbed" }
+  - { prefix: "...", text: "the floor opened up" }
+  - { prefix: "^^^", text: "the kick stepped back" }
+  - { prefix: ">>>", text: "more weight in the low end now" }
+
+drift_lufs_integrated:
+  - { prefix: "^^^", text: "loudness ceiling shifted" }
+  - { prefix: "...", text: "the body of the mix changed" }
+  - { prefix: ">>>", text: "the mix sat louder" }
+
+drift_spectral_centroid:
+  - { prefix: ">>>", text: "the highs are pushing harder" }
+  - { prefix: "...", text: "darker mix balance now" }
+  - { prefix: "^^^", text: "the top end opened" }
+  - { prefix: "...", text: "the air dropped out" }
+
+drift_onset_density:
+  - { prefix: ">>>", text: "more transients per bar" }
+  - { prefix: "...", text: "the rhythm thinned out" }
+  - { prefix: "^^^", text: "denser articulation in the percussion" }
+  - { prefix: "...", text: "the hi-hats stepped down" }
+
+drift_key:
+  - { prefix: "***", text: "harmonic ground moved" }
+  - { prefix: "^^^", text: "key center shifted" }
+
+prediction_error_tempo:
+  - { prefix: "***", text: "that's not the tempo I had" }
+  - { prefix: "^^^", text: "didn't have the pulse there" }
+  - { prefix: "...", text: "tempo sat somewhere else than the model" }
+
+prediction_error_dynamic_envelope:
+  - { prefix: "^^^", text: "louder than I projected" }
+  - { prefix: "...", text: "quieter than the model held" }
+  - { prefix: ">>>", text: "more weight than expected" }
+
+prediction_error_lufs_integrated:
+  - { prefix: "^^^", text: "different overall weight than I had" }
+  - { prefix: "...", text: "the mix sat lower than the model" }
+
+prediction_error_spectral_centroid:
+  - { prefix: ">>>", text: "brighter than I projected" }
+  - { prefix: "...", text: "darker shape than the model" }
+  - { prefix: "^^^", text: "more high content than I had" }
+
+prediction_error_onset_density:
+  - { prefix: ">>>", text: "denser than the model" }
+  - { prefix: "...", text: "sparser than I had" }
+  - { prefix: "^^^", text: "more rhythmic events than expected" }
+
+generic:
+  - { prefix: ">>>", text: "something just shifted in the mix balance" }
+  - { prefix: "...", text: "the energy moved" }
+  - { prefix: "^^^", text: "the production architecture changed" }

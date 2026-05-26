@@ -1,0 +1,45 @@
+# EDM profile — high-density electronic music.
+#
+# Tracks with strong 4-on-the-floor / sub-bass / structural builds + drops.
+# Thresholds are intentionally HIGHER than the experimental fallback —
+# normal EDM has wide dynamic + spectral variation by design, so the agent
+# must wait for genuinely meaningful drift before speaking. Action-text
+# benefits the most here (level 2 prefix-cues without prose round-trips)
+# because EDM moves fast.
+#
+# Anti-spoiler discipline matters extra in EDM: builds telegraph the drop
+# by definition, and the agent has the delay tower's buffer of foreknowledge.
+# The honesty validator catches phrasings; the scheduler's ts_user_clock
+# math handles the timing. Catalog entries below are all past/present tense.
+
+name: edm
+description: |
+  Electronic dance music profile. High thresholds to ride out normal
+  build-drop variation; commentary concentrates on real drift outside
+  expected structural movement.
+
+density_by_section:
+  default: 1.0
+
+thresholds:
+  action_text: 1.2
+  exclamation: 2.0
+  observation: 3.5
+  considered: 5.5
+  reflection: 8.0
+
+silence_zones: []
+
+# Documented genre clichés to avoid (not currently enforced by code; honesty
+# validator's module-level patterns cover the universal cases). Phase H
+# follow-up may consume these via a per-profile validator extension.
+anti_patterns:
+  - "main stage energy"
+  - "festival vibes"
+  - "feels like an anthem"
+  - "drops hard"
+  - "absolute banger"
+
+action_text_repeat_window_seconds: 300
+
+action_text_catalog: action_text/edm.yaml

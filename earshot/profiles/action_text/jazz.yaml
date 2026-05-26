@@ -1,0 +1,64 @@
+# Action-text catalog — Jazz profile.
+#
+# Vocabulary borrows from jazz craft language: comping, voicing, time, line,
+# statement, modulation. Performer plurals ("they") are used because most
+# of these events describe ensemble behavior. Anti-patterns in the profile
+# YAML list the genre's stock clichés to avoid in prose authoring.
+
+drift_tempo:
+  - { prefix: "^^^", text: "the time stretched" }
+  - { prefix: "...", text: "they're sitting back on the beat" }
+  - { prefix: ">>>", text: "pushing forward against the pulse" }
+  - { prefix: "...", text: "the time loosened" }
+
+drift_dynamic_envelope:
+  - { prefix: ">>>", text: "the band pushed" }
+  - { prefix: "...", text: "they pulled back" }
+  - { prefix: "^^^", text: "the level lifted" }
+  - { prefix: "...", text: "the ensemble dropped under itself" }
+
+drift_lufs_integrated:
+  - { prefix: "^^^", text: "overall body shifted" }
+  - { prefix: "...", text: "the room got quieter" }
+
+drift_spectral_centroid:
+  - { prefix: ">>>", text: "brighter harmonic shape" }
+  - { prefix: "...", text: "darker voicing now" }
+  - { prefix: "^^^", text: "the timbre turned" }
+
+drift_onset_density:
+  - { prefix: ">>>", text: "more notes per bar" }
+  - { prefix: "...", text: "they thinned the line" }
+  - { prefix: "^^^", text: "denser comping" }
+  - { prefix: "...", text: "the line opened up" }
+
+drift_key:
+  - { prefix: "***", text: "harmonic center moved" }
+  - { prefix: "^^^", text: "modulation took hold" }
+  - { prefix: "***", text: "they took it somewhere new" }
+
+prediction_error_tempo:
+  - { prefix: "^^^", text: "they took the tempo somewhere else" }
+  - { prefix: "***", text: "not the time I had" }
+  - { prefix: "^^^", text: "the pulse went past where I projected" }
+
+prediction_error_dynamic_envelope:
+  - { prefix: "^^^", text: "louder statement than I projected" }
+  - { prefix: "...", text: "they're quieter than the model held" }
+
+prediction_error_lufs_integrated:
+  - { prefix: "^^^", text: "the body sat differently than I had" }
+
+prediction_error_spectral_centroid:
+  - { prefix: ">>>", text: "brighter harmonic shape than I projected" }
+  - { prefix: "...", text: "the voicing went darker than the model" }
+  - { prefix: "^^^", text: "different timbral choice than I had" }
+
+prediction_error_onset_density:
+  - { prefix: ">>>", text: "more activity than I projected" }
+  - { prefix: "...", text: "they're playing fewer notes than the model held" }
+
+generic:
+  - { prefix: "^^^", text: "they're doing something I didn't model" }
+  - { prefix: "...", text: "something subtle shifted in the ensemble" }
+  - { prefix: ">>>", text: "the band moved together" }
