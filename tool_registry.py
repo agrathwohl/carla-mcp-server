@@ -1415,6 +1415,59 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                 "earshot_load_analyzer_chain(include_params=True)  # full introspection",
             ],
         ),
+        ToolDefinition(
+            name="earshot_wire_delay_tower",
+            description=(
+                "Phase K — wire the analyzer chain + delay tower into the live audio path "
+                "so the user hears audio ON A DELAY while the analyzer reads raw audio. "
+                "Without this, the anti-spoiler delay_buffer_ms is just a timestamp-math "
+                "constant — the user actually hears audio in real-time. After this routing, "
+                "the user's perception of the audio is delayed by the art_delay_stereo's "
+                "configured delay time, and ts_user_clock = event.ts_ms + delay_buffer_ms "
+                "becomes physically correct."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "source_ports": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": (
+                            "Stereo source JACK output ports producing the audio. "
+                            "Typical: ['PulseAudio_JACK_Sink:front-left', "
+                            "'PulseAudio_JACK_Sink:front-right']."
+                        ),
+                    },
+                    "sink_ports": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": (
+                            "User's audio output ports. Defaults to "
+                            "['system:playback_1', 'system:playback_2']."
+                        ),
+                    },
+                    "chain_entry_plugin_id": {
+                        "type": "integer", "default": 0,
+                        "description": "Plugin index of the analyzer chain's first node.",
+                    },
+                    "delay_plugin_id": {
+                        "type": "integer", "default": 4,
+                        "description": "Plugin index of the delay tower (art_delay_stereo).",
+                    },
+                    "disconnect_source_from_sink": {
+                        "type": "boolean", "default": True,
+                        "description": (
+                            "When true, tear down any direct source -> sink connections so "
+                            "the user only hears the delayed path. Set false to keep the "
+                            "direct path AND add the delayed path (= echo)."
+                        ),
+                    },
+                },
+                "required": ["source_ports"],
+            },
+            examples=[
+                "earshot_wire_delay_tower(source_ports=['PulseAudio_JACK_Sink:front-left', 'PulseAudio_JACK_Sink:front-right'])",
+            ],
+        ),
     ]
 
 

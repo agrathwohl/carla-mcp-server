@@ -253,6 +253,8 @@ class EarshotTools:
             return await self.earshot_end_session(**arguments)
         if tool_name == "earshot_load_analyzer_chain":
             return await self.earshot_load_analyzer_chain(**arguments)
+        if tool_name == "earshot_wire_delay_tower":
+            return await self.earshot_wire_delay_tower(**arguments)
         if tool_name == "earshot_reflect_session":
             return await self.earshot_reflect_session(**arguments)
         raise ValueError(f"Unknown earshot tool: {tool_name}")
@@ -883,6 +885,200 @@ class EarshotTools:
                 "Pass `semantics=<the semantics dict>` and "
                 "`plugin_ids=<list(plugins.keys())>` to earshot_start_session "
                 "to enable drift + prediction tracking via the LV2 chain."
+            ),
+        }
+
+    async def earshot_wire_delay_tower(
+        self,
+        source_ports: list,
+        sink_ports: Optional[list] = None,
+        chain_entry_plugin_id: int = 0,
+        delay_plugin_id: int = 4,
+        disconnect_source_from_sink: bool = True,
+        **_kw,
+    ) -> dict:
+        """Phase K — wire the analyzer chain + delay tower into the live
+        audio path so the user hears audio ON A DELAY while the analyzer
+        sees raw audio.
+
+        Architecture (per Earshot README §"co-listening"):
+            SOURCE ─┬─ analyzer chain entry (raw — agent's clock)
+                    └─ delay tower input ─ delay tower output ─ SYSTEM PLAYBACK (user's clock = T + delay)
+
+        Without this routing, `delay_buffer_ms` is just a math constant
+        used in `ts_user_clock = event.ts_ms + delay_buffer_ms` but the
+        user actually hears audio in real-time — the anti-spoiler
+        discipline collapses because the agent's measurements arrive at
+        the SAME wall-clock as the user's perception of the audio.
+
+        After this routing:
+          - Agent sees the source at T (no delay)
+          - User hears the source at T + (art_delay_stereo's delay time)
+          - Commentary scheduled to land at ts_user_clock = event.ts_ms +
+            delay_buffer_ms actually arrives "on the moment" from the
+            user's perspective.
+
+        Side effect: when `disconnect_source_from_sink=True` (default), any
+        existing direct `source -> sink` connections are torn down so the
+        user doesn't hear undelayed + delayed audio mixed. To restore the
+        direct path later, the caller has to reconnect manually (this tool
+        is intentionally not stateful — it doesn't remember prior routes).
+
+        Args:
+            source_ports:       JACK output ports producing the audio,
+                                e.g. ["PulseAudio_JACK_Sink:front-left",
+                                      "PulseAudio_JACK_Sink:front-right"].
+            sink_ports:         Where the user's ear is. Defaults to
+                                ["system:playback_1", "system:playback_2"].
+            chain_entry_plugin_id: Plugin index of the analyzer chain's
+                                first node (default 0 = LSP autogain).
+            delay_plugin_id:    Plugin index of the delay tower
+                                (default 4 = LSP art_delay_stereo).
+            disconnect_source_from_sink: When True, tear down any direct
+                                source->sink connections so the user only
+                                hears the delayed path.
+        """
+        from utils.async_helpers import run_blocking
+
+        if not source_ports:
+            return {"status": "error", "error": "source_ports is required"}
+        if sink_ports is None:
+            sink_ports = ["system:playback_1", "system:playback_2"]
+        if len(source_ports) != 2 or len(sink_ports) != 2:
+            return {"status": "error",
+                    "error": "source_ports and sink_ports must each have exactly 2 elements (L, R)"}
+        if self.carla is None or not self.carla.engine_running:
+            return {"status": "error", "error": "Carla engine not running"}
+
+        # Resolve plugin display names — we need them to build JACK port
+        # names like "CarlaMCP_default.0/<plugin name>:<port>".
+        def _plugin_name(pid: int) -> Optional[str]:
+            info = self.carla.host.get_plugin_info(pid)
+            return info.get("name") if info else None
+
+        chain_name = await run_blocking(
+            _plugin_name, chain_entry_plugin_id, timeout=2.0,
+            description=f"get_plugin_info[{chain_entry_plugin_id}]")
+        delay_name = await run_blocking(
+            _plugin_name, delay_plugin_id, timeout=2.0,
+            description=f"get_plugin_info[{delay_plugin_id}]")
+        if not chain_name or not delay_name:
+            return {"status": "error",
+                    "error": f"plugin name lookup failed (chain={chain_name!r}, delay={delay_name!r})"}
+
+        # LSP plugins expose audio I/O as "Input L"/"Input R"/"Output L"/
+        # "Output R" with spaces. JACK quoting handled by subprocess (no
+        # shell). gareus plugins use "InL"/"OutL" without spaces, but the
+        # canonical chain's entry (autogain) and delay (art_delay_stereo)
+        # are both LSP, so we hard-code LSP port names here.
+        client_prefix = "CarlaMCP_default.0"
+        chain_in_L = f"{client_prefix}/{chain_name}:Input L"
+        chain_in_R = f"{client_prefix}/{chain_name}:Input R"
+        delay_in_L = f"{client_prefix}/{delay_name}:Input L"
+        delay_in_R = f"{client_prefix}/{delay_name}:Input R"
+        delay_out_L = f"{client_prefix}/{delay_name}:Output L"
+        delay_out_R = f"{client_prefix}/{delay_name}:Output R"
+
+        def _jack_connect(src: str, dst: str) -> tuple:
+            proc = subprocess.run(
+                ["jack_connect", src, dst],
+                capture_output=True, text=True, timeout=5.0,
+            )
+            # jack_connect returns 1 if the connection already exists;
+            # that's not really an error for our purposes.
+            already = "already" in (proc.stderr or "").lower()
+            return (proc.returncode == 0 or already, proc.stderr.strip())
+
+        def _jack_disconnect(src: str, dst: str) -> tuple:
+            proc = subprocess.run(
+                ["jack_disconnect", src, dst],
+                capture_output=True, text=True, timeout=5.0,
+            )
+            return (proc.returncode == 0, proc.stderr.strip())
+
+        def _list_connections(port: str) -> list:
+            proc = subprocess.run(
+                ["jack_lsp", "-c", port],
+                capture_output=True, text=True, timeout=5.0,
+            )
+            if proc.returncode != 0:
+                return []
+            # jack_lsp -c output: line for the port, then indented lines for connected peers
+            lines = (proc.stdout or "").splitlines()
+            connections = []
+            saw_self = False
+            for line in lines:
+                if not saw_self and line.strip() == port:
+                    saw_self = True
+                    continue
+                if saw_self and line.startswith(" ") or line.startswith("\t"):
+                    connections.append(line.strip())
+                else:
+                    saw_self = False
+            return connections
+
+        operations: list = []
+        errors: list = []
+
+        # Step 1: tear down any direct source -> sink connections so the
+        # user only hears the delayed path. We discover them rather than
+        # assuming a specific topology — JACK auto-graph rules vary by setup.
+        if disconnect_source_from_sink:
+            for src in source_ports:
+                peers = await run_blocking(
+                    _list_connections, src, timeout=5.0,
+                    description=f"jack_lsp -c {src}")
+                for peer in peers:
+                    if peer in sink_ports or any(
+                        peer.startswith(s.split(":")[0] + ":") for s in sink_ports
+                    ):
+                        ok, err = await run_blocking(
+                            _jack_disconnect, src, peer, timeout=5.0,
+                            description=f"disconnect {src} -> {peer}")
+                        operations.append({"op": "disconnect", "src": src, "dst": peer, "ok": ok})
+                        if not ok and err:
+                            errors.append(f"disconnect {src}->{peer}: {err}")
+
+        # Step 2: connect source -> analyzer chain entry (so analyzer reads
+        # the source) AND source -> delay tower input (so delay buffers it).
+        connections_to_make = [
+            (source_ports[0], chain_in_L),
+            (source_ports[1], chain_in_R),
+            (source_ports[0], delay_in_L),
+            (source_ports[1], delay_in_R),
+            # Step 3: delay tower output -> system playback.
+            (delay_out_L, sink_ports[0]),
+            (delay_out_R, sink_ports[1]),
+        ]
+        for src, dst in connections_to_make:
+            ok, err = await run_blocking(
+                _jack_connect, src, dst, timeout=5.0,
+                description=f"connect {src} -> {dst}")
+            operations.append({"op": "connect", "src": src, "dst": dst, "ok": ok})
+            if not ok and err:
+                errors.append(f"connect {src}->{dst}: {err}")
+
+        return {
+            "status": "complete" if not errors else "partial",
+            "chain_plugin_name": chain_name,
+            "delay_plugin_name": delay_name,
+            "operations": operations,
+            "errors": errors,
+            "topology": {
+                "agent_reads": [
+                    f"{src} -> {chain_in_L if i == 0 else chain_in_R}"
+                    for i, src in enumerate(source_ports)
+                ],
+                "user_hears": [
+                    f"{src} -> delay -> {sink_ports[i]}"
+                    for i, src in enumerate(source_ports)
+                ],
+            },
+            "note": (
+                "User now hears audio with the delay-tower's configured delay "
+                "applied (see art_delay_stereo's params in the .carxp). "
+                "Agent's analyzer chain reads the undelayed source. The "
+                "ts_user_clock anti-spoiler math is now physically correct."
             ),
         }
 
