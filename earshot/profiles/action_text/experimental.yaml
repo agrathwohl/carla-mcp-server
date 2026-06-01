@@ -66,8 +66,8 @@ prediction_error_tempo:
   - { prefix: "***", text: "that's not where I had it" }
 
 prediction_error_dynamic_envelope:
-  - { prefix: "^^^", text: "wider than I had it" }
-  - { prefix: "...", text: "thinner than I expected" }
+  - { prefix: "^^^", text: "louder than I had it" }
+  - { prefix: "...", text: "quieter than I expected" }
   - { prefix: ">>>", text: "fuller body than the model thought" }
 
 prediction_error_lufs_integrated:
@@ -80,6 +80,30 @@ prediction_error_spectral_centroid:
 prediction_error_onset_density:
   - { prefix: ">>>", text: "more events than I projected" }
   - { prefix: "...", text: "sparser than the model had" }
+
+drift_chord_change_rate:
+  - { prefix: ">>>", text: "the changes sped up" }
+  - { prefix: "...", text: "the harmony settled" }
+
+prediction_error_chord_change_rate:
+  - { prefix: "^^^", text: "more harmonic motion than I expected" }
+  - { prefix: "...", text: "steadier changes than the model held" }
+
+drift_harmonic_tension:
+  - { prefix: "^^^", text: "tension built" }
+  - { prefix: "...", text: "it resolved" }
+
+prediction_error_harmonic_tension:
+  - { prefix: "^^^", text: "more tension than I projected" }
+  - { prefix: "...", text: "clearer than the model expected" }
+
+structural_build:
+  - { prefix: ">>>", text: "this section opens up" }
+  - { prefix: "^^^", text: "it steps up here" }
+
+structural_release:
+  - { prefix: "...", text: "this section pulls back" }
+  - { prefix: "...", text: "it drops down here" }
 
 # Generic fallback when no specific event-type catalog matches. Should be
 # rare — every emission ideally hits a specific bucket above.

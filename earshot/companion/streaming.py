@@ -63,6 +63,8 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import numpy as np
 
+from chroma_features import chord_change_rate, harmonic_tension
+
 
 # Atomicity ceiling — must match AmbientStreamWriter.MAX_LINE_BYTES (4000).
 # Lines above this lose multi-writer line-atomicity on Linux PIPE_BUF.
@@ -179,6 +181,7 @@ def main() -> int:
     # O_APPEND multi-writer safety contract (ambient_stream.py docstring).
     with open(ambient_path, "a", buffering=1, encoding="utf-8") as fp:
         chunk_start_s = 0.0
+        prev_chroma_mean = None  # for chord-change-rate (needs the previous chunk)
         while chunk_start_s < duration_s and not _terminate_requested:
             start_sample = int(chunk_start_s * sr)
             end_sample = min(start_sample + chunk_samples, len(y))
@@ -211,15 +214,25 @@ def main() -> int:
             except Exception:
                 pass
 
-            # --- Key (Krumhansl-Schmuckler over chroma_cqt) ---
+            # --- Harmony: key + chord-change-rate + harmonic-tension (shared chroma) ---
             try:
                 chroma = librosa.feature.chroma_cqt(y=chunk, sr=sr)
-                key_result = estimate_key_chroma(chroma.mean(axis=1))
-                # Only emit when confidence clears a sanity floor — chroma
+                chroma_mean = chroma.mean(axis=1)
+                key_result = estimate_key_chroma(chroma_mean)
+                # Only emit key when confidence clears a sanity floor — chroma
                 # on percussive-only chunks otherwise reports noise.
                 if key_result["confidence"] >= 0.3:
                     emit(fp, ts_ms, "key", key_result)
                     metrics_emitted += 1
+                # Tension (absolute, this chunk).
+                emit(fp, ts_ms, "harmonic_tension", harmonic_tension(chroma_mean))
+                metrics_emitted += 1
+                # Change rate needs the previous chunk's chroma mean.
+                if prev_chroma_mean is not None:
+                    emit(fp, ts_ms, "chord_change_rate",
+                         chord_change_rate(prev_chroma_mean, chroma_mean))
+                    metrics_emitted += 1
+                prev_chroma_mean = chroma_mean
             except Exception:
                 pass
 

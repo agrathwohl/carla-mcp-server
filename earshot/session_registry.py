@@ -95,6 +95,10 @@ class SessionState:
     # enabled this stays None and components start with the wall-clock-
     # at-session-start playback_start_ms.
     playback_sync_task: Optional["asyncio.Task"] = None
+    # Phase N — Carla audiofile source plugin id, set by earshot_play. When
+    # present, end_session pauses transport + removes the source so stopping
+    # the session also stops the audio.
+    source_plugin_id: Optional[int] = None
 
 
 class SessionRegistry:

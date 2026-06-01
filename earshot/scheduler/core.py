@@ -51,6 +51,8 @@ from earshot.comparators.events import (
     DriftEvent,
     EventQueue,
     PredictionErrorEvent,
+    StructuralEvent,
+    domain_for,
 )
 from earshot.honesty import DEFAULT_VALIDATOR, HonestyValidator
 from earshot.phase2_baseline import Phase2Baseline
@@ -63,14 +65,6 @@ from earshot.scheduler.commentary import (
 from earshot.scheduler.intensity import IntensityLevel, score_to_level
 
 logger = logging.getLogger(__name__)
-
-
-# Per-dimension scaling factors converting a DriftEvent's raw magnitude
-# (in BPM, dB, LU, Hz, Hz/s) into the dimensionless "magnitudes over
-# threshold" score the scheduler uses. ratio = magnitude / threshold;
-# this dict could be elided since we always divide-by-threshold below,
-# but keeping it explicit clarifies the model.
-DRIFT_SCORE_MODE = "magnitude_over_threshold"
 
 
 class Scheduler:
@@ -86,6 +80,7 @@ class Scheduler:
         playback_start_ms: int,
         delay_buffer_ms: int = 5000,
         validator: Optional[HonestyValidator] = None,
+        artist_context: Optional[str] = None,
     ):
         if delay_buffer_ms < 0:
             raise ValueError(f"delay_buffer_ms must be ≥ 0, got {delay_buffer_ms}")
@@ -96,6 +91,10 @@ class Scheduler:
         self.playback_start_ms = int(playback_start_ms)
         self.delay_buffer_ms = int(delay_buffer_ms)
         self.validator = validator or DEFAULT_VALIDATOR
+        # Static artist-background digest (from the oeuvre deep-research report),
+        # attached to every prose request so the orchestrator can ground its
+        # reaction in who made the track. None when no oeuvre report exists.
+        self.artist_context = artist_context
 
         # Per-event-type history of recent action-text choices, used to
         # avoid repeating the same phrase within
@@ -185,6 +184,35 @@ class Scheduler:
             )
             return
 
+        # Structural build/release events (music-domain). No per-sample score
+        # path (they'd otherwise fall to SILENT via _normalized_score); intensity
+        # is set by the energy jump. Hybrid-by-intensity: a modest section change
+        # takes the fast catalog line ("this section opens up"); a big jump
+        # escalates to an LLM-composed reaction.
+        if isinstance(event, StructuralEvent):
+            score = abs(event.energy_delta_db) / 6.0
+            ts_user_clock = event.ts_ms + self.delay_buffer_ms
+            if abs(event.energy_delta_db) >= 6.0:
+                level = IntensityLevel.CONSIDERED
+                self._stats["by_level"][level.name] += 1
+                await self._emit_prose_request(
+                    intensity=level,
+                    source_event=event,
+                    context=self._prose_context(
+                        event, score, event.track_time_s, None,
+                        domain="music", warrant=max(0.0, score - 1.0),
+                    ),
+                    ts_target_user_clock_ms=ts_user_clock,
+                )
+            else:
+                level = IntensityLevel.ACTION_TEXT
+                self._stats["by_level"][level.name] += 1
+                await self._emit_action_text(
+                    event=event, score=score, level=level,
+                    ts_user_clock=ts_user_clock, track_time_s=event.track_time_s,
+                )
+            return
+
         # Drift + Prediction-error events compute a normalized score, then
         # gate through profile rules → level selection → emit or suppress.
         score = self._normalized_score(event)
@@ -209,19 +237,21 @@ class Scheduler:
             return
 
         ts_user_clock = event.ts_ms + self.delay_buffer_ms
+        domain = self._event_domain(event)
+        warrant = max(0.0, score - 1.0)   # score is already magnitude/threshold
 
         if level == IntensityLevel.ACTION_TEXT:
             await self._emit_action_text(
                 event=event, score=score, level=level,
                 ts_user_clock=ts_user_clock, track_time_s=track_time_s,
-                section_index=(sec.get("index") if sec else None),
             )
         else:
             # Levels 3-6: prose path — orchestrator fulfills.
             await self._emit_prose_request(
                 intensity=level,
                 source_event=event,
-                context=self._prose_context(event, score, track_time_s, sec),
+                context=self._prose_context(event, score, track_time_s, sec,
+                                            domain=domain, warrant=warrant),
                 ts_target_user_clock_ms=ts_user_clock,
             )
 
@@ -258,7 +288,6 @@ class Scheduler:
         level: IntensityLevel,
         ts_user_clock: int,
         track_time_s: float,
-        section_index: Optional[int],
     ) -> None:
         """Compose a level-2 emission from the profile's catalog."""
         catalog_key = self._catalog_key_for(event)
@@ -372,7 +401,51 @@ class Scheduler:
                 dim = event.dimensions[0]
                 dim_val = dim.value if hasattr(dim, "value") else str(dim)
                 return f"prediction_error_{dim_val}"
+        if isinstance(event, StructuralEvent):
+            return event.kind.replace("section_", "structural_")  # structural_build|structural_release
         return "generic"
+
+    def _event_domain(self, event: ComparatorEvent) -> str:
+        """"mix" or "music" for an event — routes phrasing + grounding source."""
+        if isinstance(event, StructuralEvent):
+            return "music"
+        if isinstance(event, DriftEvent):
+            return domain_for(event.dimension)
+        if isinstance(event, PredictionErrorEvent):
+            # The prediction comparator emits one dimension per event today, so
+            # routing by dimensions[0] is exact. (If a future change batches
+            # mixed-domain dimensions into one event, this would route by the
+            # first — keep PredictionErrorEvent.dimensions homogeneous in domain.)
+            return domain_for(event.dimensions[0]) if event.dimensions else "mix"
+        return "mix"
+
+    def _music_event_phrase(self, event: ComparatorEvent) -> str:
+        """Short, factual descriptor of a MUSIC-domain event for the orchestrator.
+        Deterministic and enthusiasm-free — the LLM adds the warranted reaction."""
+        if isinstance(event, StructuralEvent):
+            verb = "opened up" if event.kind == "section_build" else "pulled back"
+            return f"section {verb} ({event.energy_delta_db:+.0f} dB vs the last)"
+        if isinstance(event, DriftEvent):
+            dim = event.dimension
+            up = None
+            try:
+                up = float(event.current) > float(event.baseline)
+            except (TypeError, ValueError):
+                up = None
+            if dim == Dimension.KEY:
+                return "the harmony shifted"
+            if dim == Dimension.TEMPO:
+                return "the pulse pushed" if up else "the pulse eased"
+            if dim == Dimension.ONSET_DENSITY:
+                return "the rhythm thickened" if up else "the rhythm thinned"
+            if dim == Dimension.CHORD_CHANGE_RATE:
+                return "the changes sped up" if up else "the harmony settled"
+            if dim == Dimension.HARMONIC_TENSION:
+                return "tension rising" if up else "it resolved"
+            return f"{dim.value} moved"
+        if isinstance(event, PredictionErrorEvent) and event.dimensions:
+            return f"{event.dimensions[0].value} diverged from what I expected"
+        return "something shifted in the music"
 
     def _dimensions_of(self, event: ComparatorEvent) -> list[str]:
         if isinstance(event, DriftEvent):
@@ -390,14 +463,23 @@ class Scheduler:
         return f"{type(event).__name__}_{event.ts_ms}"
 
     def _prose_context(
-        self, event: ComparatorEvent, score: float, track_time_s: float, sec: Optional[dict]
+        self, event: ComparatorEvent, score: float, track_time_s: float,
+        sec: Optional[dict], *, domain: str = "mix", warrant: float = 0.0,
     ) -> dict:
-        """Build the context dict an orchestrator needs to compose prose."""
+        """Build the context dict an orchestrator needs to compose prose.
+
+        `domain` ("mix"|"music") selects the grounding source: MIX events carry
+        MixAssist hints; MUSIC events carry a factual music-event descriptor and
+        NO MixAssist (it's a mixing dataset). `warrant` is echoed so the
+        orchestrator can pass it to earshot_submit_commentary for the honesty
+        escape valve."""
         ctx = {
             "event_type": type(event).__name__,
             "track_time_s": round(track_time_s, 3),
             "score": round(score, 4),
             "section": sec,
+            "domain": domain,
+            "warrant": round(warrant, 3),
         }
         if isinstance(event, DriftEvent):
             ctx.update({
@@ -418,14 +500,27 @@ class Scheduler:
                 ],
                 "expected": event.expected,
                 "actual": event.actual,
+                "section_index": event.section_index,
             })
-        # MixAssist grounding hints — orchestrator should query these
-        # resources before composing prose so commentary is grounded in the
-        # 640-conversation professional audio engineering dataset rather than
-        # generic LLM output. Read via ReadMcpResourceTool(server="carla-mcp-server", uri=<hint>).
-        # Voice rule (per project CLAUDE.md): reference as "in my experience",
-        # not "according to the dataset".
-        ctx["mixassist_hints"] = _mixassist_hints_for(event)
+        # Grounding source by domain:
+        #  - MIX  -> MixAssist hints (the orchestrator queries those resources
+        #    before composing, grounding in the 640-conversation mixing dataset;
+        #    reference as "in my experience", not "according to the dataset").
+        #  - MUSIC -> a factual music-event descriptor; NO MixAssist (it's a
+        #    mixing dataset, not music-content), the LLM composes the reaction.
+        if domain == "mix":
+            ctx["mixassist_hints"] = _mixassist_hints_for(event)
+        else:
+            ctx["music_event"] = self._music_event_phrase(event)
+        # Lyric + artist grounding (both domains). `lyric` is anti-spoiler-safe:
+        # only words already sung at track_time_s, which is what the listener
+        # hears when this commentary lands after the delay tower. Omitted when
+        # instrumental / no word timing / no oeuvre report, to keep context lean.
+        lyric = self.baseline.recent_lyrics(track_time_s)
+        if lyric:
+            ctx["lyric"] = lyric
+        if self.artist_context:
+            ctx["artist_context"] = self.artist_context
         return ctx
 
 

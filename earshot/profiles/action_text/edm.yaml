@@ -61,6 +61,30 @@ prediction_error_onset_density:
   - { prefix: "...", text: "sparser than I had" }
   - { prefix: "^^^", text: "more rhythmic events than expected" }
 
+drift_chord_change_rate:
+  - { prefix: ">>>", text: "the chords are moving faster" }
+  - { prefix: "...", text: "the progression locked in" }
+
+prediction_error_chord_change_rate:
+  - { prefix: "^^^", text: "more chord motion than I projected" }
+  - { prefix: "...", text: "steadier than the model held" }
+
+drift_harmonic_tension:
+  - { prefix: "^^^", text: "tension stacking up" }
+  - { prefix: "...", text: "it resolved out" }
+
+prediction_error_harmonic_tension:
+  - { prefix: "^^^", text: "more tension than I projected" }
+  - { prefix: "...", text: "cleaner than the model expected" }
+
+structural_build:
+  - { prefix: ">>>", text: "the energy builds into this section" }
+  - { prefix: "^^^", text: "it lifts hard here" }
+
+structural_release:
+  - { prefix: "...", text: "the breakdown pulls back" }
+  - { prefix: "...", text: "it drops the energy here" }
+
 generic:
   - { prefix: ">>>", text: "something just shifted in the mix balance" }
   - { prefix: "...", text: "the energy moved" }

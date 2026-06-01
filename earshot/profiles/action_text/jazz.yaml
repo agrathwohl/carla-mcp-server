@@ -58,6 +58,30 @@ prediction_error_onset_density:
   - { prefix: ">>>", text: "more activity than I projected" }
   - { prefix: "...", text: "they're playing fewer notes than the model held" }
 
+drift_chord_change_rate:
+  - { prefix: ">>>", text: "the changes are moving faster" }
+  - { prefix: "...", text: "they settled the harmony" }
+
+prediction_error_chord_change_rate:
+  - { prefix: "^^^", text: "more reharmonization than I projected" }
+  - { prefix: "...", text: "they held the changes longer than the model" }
+
+drift_harmonic_tension:
+  - { prefix: "^^^", text: "they leaned into the tension" }
+  - { prefix: "...", text: "they resolved it" }
+
+prediction_error_harmonic_tension:
+  - { prefix: "^^^", text: "more tension than I projected" }
+  - { prefix: "...", text: "they cleared it sooner than the model held" }
+
+structural_build:
+  - { prefix: ">>>", text: "the chorus opens up here" }
+  - { prefix: "^^^", text: "they lift into this section" }
+
+structural_release:
+  - { prefix: "...", text: "they pull back into this section" }
+  - { prefix: "...", text: "the ensemble drops down here" }
+
 generic:
   - { prefix: "^^^", text: "they're doing something I didn't model" }
   - { prefix: "...", text: "something subtle shifted in the ensemble" }

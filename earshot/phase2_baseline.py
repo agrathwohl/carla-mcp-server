@@ -115,6 +115,18 @@ class Phase2Baseline:
         self.spectral_centroid_std_hz: float = float(b.get("spectral_centroid_std_hz", 0.0))
         self.dynamic_range_db: float = float(b.get("dynamic_range_db", 0.0))
 
+        # New harmonic features (additive). None when the key is ABSENT
+        # (pre-2026-05-31 artifact) -> value_for returns None -> comparators skip
+        # gracefully. A genuine computed 0.0 (e.g. a perfectly static track) is
+        # kept as 0.0, NOT conflated with "absent".
+        self.chord_change_rate_mean: Optional[float] = (
+            float(b["chord_change_rate_mean"]) if "chord_change_rate_mean" in b else None)
+        self.harmonic_tension_mean: Optional[float] = (
+            float(b["harmonic_tension_mean"]) if "harmonic_tension_mean" in b else None)
+        # Per-section means keyed by section index (JSON keys may be str or int):
+        # {index: {"chord_change_rate": x, "harmonic_tension": y}}
+        self._section_harmonic: dict = context_data.get("section_harmonic") or {}
+
         # Time-series — pre-sorted for bisect-based queries.
         # RMS envelope: list of {"t_s": float, "rms_db": float}, sorted by t_s.
         rms = context_data.get("rms_envelope_db") or []
@@ -136,6 +148,13 @@ class Phase2Baseline:
 
         # Lyric segments — sorted by start_s.
         self._transcript: list[dict] = list(context_data.get("transcript") or [])
+        # Word-level lyric timing (Phase 2 with word_timestamps=True). Each:
+        # {"start_s", "end_s", "word"}. Enables recent_lyrics() to surface only
+        # words already sung at a given time — anti-spoiler-safe, unlike the
+        # coarse segments which can run minutes ahead. Empty for older
+        # context.json files transcribed before word timing was enabled.
+        self._transcript_words: list[dict] = list(
+            context_data.get("transcript_words") or [])
 
     # ------------------------------------------------------------------
     # Time-domain query helpers
@@ -215,6 +234,26 @@ class Phase2Baseline:
                 return dict(seg)
         return None
 
+    def recent_lyrics(self, t_s: float, window_s: float = 8.0) -> Optional[str]:
+        """Words sung in the `window_s` seconds up to and including `t_s`,
+        joined into a string. ANTI-SPOILER: only words whose end_s <= t_s are
+        included, so this never reveals lyrics the listener hasn't heard yet
+        (the commentary that quotes it lands, after the delay tower, exactly
+        when the listener's ear is at t_s). Returns None when there are no
+        word timings (instrumental passage, or context.json predates word
+        timing)."""
+        if not self._transcript_words:
+            return None
+        lo = t_s - max(0.0, window_s)
+        words = [
+            w["word"] for w in self._transcript_words
+            if w.get("end_s") is not None and w.get("start_s") is not None
+            and w["end_s"] <= t_s and w["start_s"] >= lo
+        ]
+        if not words:
+            return None
+        return " ".join(words).strip() or None
+
     def nearest_beat(self, t_s: float) -> Optional[float]:
         """Nearest beat-time sample to `t_s`. Limited by top-50 stored sample.
 
@@ -249,8 +288,38 @@ class Phase2Baseline:
             return self.spectral_centroid_mean_hz or None
         if key == "onset_density":
             return self.onset_rate_hz or None
+        if key == "chord_change_rate":
+            return self._harmonic_at("chord_change_rate", t_s, self.chord_change_rate_mean)
+        if key == "harmonic_tension":
+            return self._harmonic_at("harmonic_tension", t_s, self.harmonic_tension_mean)
         # `key` dimension is categorical; callers handle it separately.
         return None
+
+    def _harmonic_at(self, feature: str, t_s: float, fallback: Optional[float]):
+        """Per-section mean of a harmonic feature at time t_s, else the global
+        mean, else None when the feature was never computed (old artifact).
+
+        `fallback` is None on an old artifact and 0.0..1.0 on a re-analyzed
+        track (including a valid 0.0), so it is returned directly — a computed
+        zero is NOT treated as 'absent'."""
+        sec = self.section_at(t_s)
+        if sec is not None:
+            per = (self._section_harmonic.get(str(sec["index"]))
+                   or self._section_harmonic.get(sec["index"]))
+            if per and feature in per:
+                return float(per[feature])
+        return fallback
+
+    def section_mean_rms_db(self, section_index: int):
+        """Mean RMS (dB) of the envelope samples within a section's span, or None."""
+        if section_index < 0 or section_index >= len(self._sections):
+            return None
+        sec = self._sections[section_index]
+        lo, hi = sec["start_s"], sec["end_s"]
+        vals = [db for t, db in zip(self._rms_times, self._rms_db) if lo <= t < hi]
+        if not vals:
+            return None
+        return sum(vals) / len(vals)
 
     # ------------------------------------------------------------------
     # Bulk accessors

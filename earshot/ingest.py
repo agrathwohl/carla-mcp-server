@@ -169,7 +169,10 @@ async def _await_non_silence_then_start(
             if not isinstance(value, (int, float)):
                 continue
             if value > silence_threshold_db:
-                detected_ts_ms = int(entry["ts_ms"])
+                ts = entry.get("ts_ms")
+                if not isinstance(ts, (int, float)):
+                    continue
+                detected_ts_ms = int(ts)
                 logger.info(
                     "playback_sync[%s]: non-silence at ts_ms=%d (value=%.2f dB on %s); "
                     "anchoring playback_start_ms here",
@@ -229,7 +232,9 @@ class EarshotTools:
         `earshot_refresh_expectations` (Phase G),
         `earshot_submit_commentary` + `earshot_get_commentary_queue` (Phase I),
         `earshot_start_session` + `earshot_user_interject` +
-        `earshot_correct_profile` + `earshot_end_session` (Phase J)."""
+        `earshot_correct_profile` + `earshot_end_session` (Phase J),
+        `earshot_load_analyzer_chain` + `earshot_wire_delay_tower` (Phase K),
+        `earshot_reflect_session` (Phase L)."""
         # Strip server-injected context that aren't real tool args.
         arguments = {k: v for k, v in (arguments or {}).items()
                      if k not in ("session_context", "performance_metrics")}
@@ -255,6 +260,14 @@ class EarshotTools:
             return await self.earshot_load_analyzer_chain(**arguments)
         if tool_name == "earshot_wire_delay_tower":
             return await self.earshot_wire_delay_tower(**arguments)
+        if tool_name == "earshot_load_source":
+            return await self.earshot_load_source(**arguments)
+        if tool_name == "earshot_stop_source":
+            return await self.earshot_stop_source(**arguments)
+        if tool_name == "earshot_play":
+            return await self.earshot_play(**arguments)
+        if tool_name == "earshot_stop":
+            return await self.earshot_stop(**arguments)
         if tool_name == "earshot_reflect_session":
             return await self.earshot_reflect_session(**arguments)
         raise ValueError(f"Unknown earshot tool: {tool_name}")
@@ -617,6 +630,7 @@ class EarshotTools:
         source_event_id: str = "",
         dimensions: Optional[list] = None,
         score: float = 0.0,
+        warrant: float = 0.0,
         **_kw,
     ) -> dict:
         """Orchestrator → scheduler: prose response to a ProseRequest.
@@ -638,6 +652,11 @@ class EarshotTools:
             source_event_id:          for traceability
             dimensions:               list of Dimension.value strings
             score:                    the comparator score that triggered this
+            warrant:                  the ProseRequest's `warrant` (event-score
+                                      multiple). Echo it back so a genuinely
+                                      surprising event permits warranted
+                                      enthusiasm past the honesty filter.
+                                      Default 0.0 = no enthusiasm latitude.
         """
         from earshot.session_registry import registry
         from earshot.scheduler.commentary import CommentaryEmission
@@ -662,7 +681,15 @@ class EarshotTools:
                     "error": "cannot submit SILENT-level content; silence is suppression, not emission"}
 
         # Honesty gate — postmortem rule #19: don't queue dishonest content.
-        result = DEFAULT_VALIDATOR.validate(content)
+        # `warrant` permits warranted enthusiasm (a real, surprising measured
+        # event); anti-spoiler/taste/marketing stay blocked regardless.
+        # The effective warrant is CAPPED at the scheduler-assigned value for
+        # this event (recorded when the ProseRequest was queued) so the
+        # orchestrator-LLM cannot self-authorize enthusiasm above what the
+        # measurement warranted — that would make the grounding circular.
+        authoritative = state.commentary_queue.warrant_for(source_event_id)
+        effective_warrant = min(float(warrant), authoritative)
+        result = DEFAULT_VALIDATOR.validate(content, warrant=effective_warrant)
         if not result.ok:
             return {
                 "status": "rejected",
@@ -1011,7 +1038,7 @@ class EarshotTools:
                 if not saw_self and line.strip() == port:
                     saw_self = True
                     continue
-                if saw_self and line.startswith(" ") or line.startswith("\t"):
+                if saw_self and (line.startswith(" ") or line.startswith("\t")):
                     connections.append(line.strip())
                 else:
                     saw_self = False
@@ -1075,12 +1102,347 @@ class EarshotTools:
                 ],
             },
             "note": (
-                "User now hears audio with the delay-tower's configured delay "
-                "applied (see art_delay_stereo's params in the .carxp). "
-                "Agent's analyzer chain reads the undelayed source. The "
-                "ts_user_clock anti-spoiler math is now physically correct."
+                "Routed the delay-tower path: agent's analyzer chain reads the "
+                "undelayed source; the user-facing path goes through the delay "
+                "plugin. Direct source->sink links were torn down when "
+                "disconnect_source_from_sink=True. IMPORTANT: the ts_user_clock "
+                "anti-spoiler math is only physically correct if the delay plugin "
+                "is wet-only (Dry enable=0) with a delay line active and a non-zero "
+                "time, baked into the loaded .carxp. If Dry enable=1 the plugin "
+                "sums dry+wet and the user hears the source undelayed AND delayed "
+                "(doubled audio). Verify/retune those params in the .carxp."
             ),
         }
+
+    # ------------------------------------------------------------------
+    # Phase N — programmatic audio source via Carla's internal audiofile plugin
+    # ------------------------------------------------------------------
+    # audiofile parameter indices (from Carla native-plugins/audio-file.cpp):
+    #   0 = Loop Mode (boolean), 1 = Host Sync (boolean).
+    _AUDIOFILE_PARAM_LOOP = 0
+    _AUDIOFILE_PARAM_HOSTSYNC = 1
+
+    # Canonical map of the streaming companion's ambient `type`s -> comparator
+    # Dimension values (see earshot/companion/streaming.py emit() calls and the
+    # Dimension enum in comparators/events.py). Merged into the LV2-chain
+    # semantics by earshot_play so the music-domain dims (tempo/key/harmonic/
+    # onset) actually drive drift + prediction, not just dynamics. Without this
+    # the companion writes these entries to the ambient stream but no comparator
+    # is mapped to them, so every event ends up domain="mix".
+    _COMPANION_SEMANTICS = {
+        "tempo_bpm": "tempo",
+        "key": "key",
+        "onset_density": "onset_density",
+        "harmonic_tension": "harmonic_tension",
+        "chord_change_rate": "chord_change_rate",
+        "lufs_integrated": "lufs_integrated",
+        "spectral_centroid": "spectral_centroid",
+    }
+
+    async def _load_audiofile_source(
+        self, file_path: str, *, loop: bool = False, host_sync: bool = True,
+    ) -> dict:
+        """Load Carla's internal `audiofile` player on `file_path`, set the
+        file, configure loop / host-sync, activate, and WAIT for its JACK
+        output ports to appear (Carla exposes them a process-cycle after
+        add_plugin, so an instant query races and finds none).
+
+        Returns {plugin_id, name, output_ports, file_verified} or {error}.
+        Caller owns transport rolling + wiring.
+        """
+        from utils.async_helpers import run_blocking
+
+        if self.carla is None:
+            return {"error": "carla controller not wired"}
+        if not file_path or not os.path.exists(file_path):
+            return {"error": f"audio file not found: {file_path!r}"}
+        if not self.carla.engine_running:
+            try:
+                self.carla.start_engine()
+            except Exception as e:
+                return {"error": f"carla engine start failed: {e}"}
+
+        pid = await run_blocking(
+            self.carla.add_internal_plugin, "audiofile", "EarshotSource",
+            timeout=15.0, description="load audiofile internal plugin")
+        if pid is None:
+            return {"error": ("audiofile internal plugin failed to load — the "
+                              "label may differ in this Carla build (see server log)")}
+
+        # set_custom_data is void in this binding; set then verify via read-back
+        # (get_plugin_file uses the same custom-data type as set_plugin_file).
+        await run_blocking(self.carla.set_plugin_file, pid, file_path,
+                           timeout=10.0, description="set audiofile file")
+        verified = await run_blocking(
+            self.carla.get_plugin_file, pid,
+            timeout=5.0, description="verify file set")
+        file_verified = (verified == file_path)
+
+        # Loop off (play once, matches the single-pass Phase 2 baseline) +
+        # host-sync on (server transport is authoritative for deterministic t=0).
+        await run_blocking(self.carla.set_parameter, pid,
+                           self._AUDIOFILE_PARAM_LOOP, 1.0 if loop else 0.0,
+                           timeout=3.0, description="set loop mode")
+        await run_blocking(self.carla.set_parameter, pid,
+                           self._AUDIOFILE_PARAM_HOSTSYNC, 1.0 if host_sync else 0.0,
+                           timeout=3.0, description="set host sync")
+        await run_blocking(self.carla.set_plugin_active, pid, True,
+                           timeout=5.0, description="activate source")
+
+        info = await run_blocking(self.carla.host.get_plugin_info, pid,
+                                  timeout=5.0, description="source plugin info")
+        pname = (info.get("name") if info else None) or "EarshotSource"
+
+        def _jack_lines():
+            proc = subprocess.run(["jack_lsp"], capture_output=True, text=True, timeout=5.0)
+            return (proc.stdout or "").splitlines()
+
+        def _audio_outs(lines):
+            # audio output ports of the source: name match + suffix has "out"
+            # but is not an events/CV port (events-out, "Play status").
+            outs = []
+            for ln in lines:
+                if pname not in ln:
+                    continue
+                suf = ln.rsplit(":", 1)[-1].lower()
+                if "out" in suf and "event" not in suf and "status" not in suf:
+                    outs.append(ln)
+            return outs
+
+        # Poll for ports. Carla exposes them a process-cycle after load, but
+        # under CPU/jackd load (e.g. immediately after a Phase 2 essentia run)
+        # the internal audiofile's JACK port registration can lag several
+        # seconds. Poll generously — the loop breaks the instant the ports
+        # appear, so a fast (idle-system) load pays no extra latency.
+        out_ports = []
+        for _ in range(60):  # up to ~6s under load
+            lines = await run_blocking(_jack_lines, timeout=6.0, description="jack_lsp poll")
+            out_ports = _audio_outs(lines)
+            if out_ports:
+                break
+            await asyncio.sleep(0.1)
+
+        return {
+            "plugin_id": pid, "name": pname,
+            "output_ports": out_ports, "file_verified": file_verified,
+        }
+
+    async def earshot_load_source(
+        self,
+        file_path: str,
+        to_speakers: bool = True,
+        autoplay: bool = True,
+        loop: bool = False,
+        **_kw,
+    ) -> dict:
+        """Low-level: load the audiofile source on a file and (optionally) wire
+        its outputs straight to system playback + roll transport. Diagnostic /
+        manual-playback path; `earshot_play` is the full co-listening entry."""
+        from utils.async_helpers import run_blocking
+
+        res = await self._load_audiofile_source(file_path, loop=loop)
+        if "error" in res:
+            return {"status": "error", "error": res["error"]}
+        pid, pname, out_ports = res["plugin_id"], res["name"], res["output_ports"]
+        if not out_ports:
+            return {"status": "error", "plugin_id": pid,
+                    "error": "source loaded but no JACK output ports appeared within ~2s"}
+
+        connections = []
+        if to_speakers:
+            def _conn(src, dst):
+                proc = subprocess.run(["jack_connect", src, dst],
+                                      capture_output=True, text=True, timeout=5.0)
+                return proc.returncode == 0 or "already" in (proc.stderr or "").lower()
+            sinks = ["system:playback_1", "system:playback_2"]
+            pairs = (list(zip(out_ports[:2], sinks)) if len(out_ports) >= 2
+                     else [(out_ports[0], sinks[0]), (out_ports[0], sinks[1])])
+            for src, dst in pairs:
+                ok = await run_blocking(_conn, src, dst, timeout=5.0,
+                                        description=f"connect {src} -> {dst}")
+                connections.append({"src": src, "dst": dst, "ok": ok})
+
+        if autoplay:
+            await run_blocking(self.carla.transport_relocate, 0, timeout=3.0,
+                               description="transport relocate 0")
+            await run_blocking(self.carla.transport_play, timeout=3.0,
+                               description="transport play")
+
+        return {
+            "status": "complete",
+            "plugin_id": pid, "plugin_name": pname,
+            "file_verified": res["file_verified"], "file_path": file_path,
+            "output_ports": out_ports, "speaker_connections": connections,
+            "loop": loop, "autoplay": autoplay,
+            "note": f"Call earshot_stop_source(plugin_id={pid}) to stop + remove.",
+        }
+
+    async def earshot_stop_source(self, plugin_id: Optional[int] = None, **_kw) -> dict:
+        """Pause transport and remove the audiofile source plugin."""
+        from utils.async_helpers import run_blocking
+        if self.carla is None:
+            return {"status": "error", "error": "carla controller not wired"}
+        await run_blocking(self.carla.transport_pause, timeout=3.0,
+                           description="transport pause")
+        removed = False
+        if plugin_id is not None:
+            removed = await run_blocking(
+                self.carla.remove_plugin, int(plugin_id),
+                timeout=5.0, description="remove source plugin")
+        return {"status": "complete", "transport_paused": True, "source_removed": removed}
+
+    async def earshot_play(
+        self,
+        track_id: str,
+        file_path: Optional[str] = None,
+        mode: str = "live",
+        profile_name: str = "experimental",
+        oeuvre_hint: Optional[str] = None,
+        plugin_ids: Optional[list] = None,
+        semantics: Optional[dict] = None,
+        delay_seconds: float = 5.0,
+        alias: Optional[str] = None,
+        **_kw,
+    ) -> dict:
+        """Phase N — one-call co-listening: load the analyzer chain, load the
+        track's audio into Carla's audiofile player, wire source -> chain (agent
+        reads) + delay -> speakers (user hears delayed), roll transport from 0,
+        and start the earshot session anchored to the EXACT transport start
+        (deterministic — no non-silence watcher).
+
+        The audio file: `file_path` if given, else `tracks/{track_id}/audio.*`.
+        The session's baseline comes from `track_id` (must be Phase-2 analyzed).
+        Plays the track ONCE (loop disabled) to match the single-pass baseline.
+        """
+        from utils.async_helpers import run_blocking
+        from earshot.ambient_stream import now_ms
+        from earshot.session_registry import registry
+
+        if self.carla is None:
+            return {"status": "error", "error": "carla controller not wired"}
+
+        # Resolve the audio file.
+        if file_path is None:
+            cand = list((dsp.TRACKS_DIR / track_id).glob("audio.*"))
+            if not cand:
+                return {"status": "error",
+                        "error": (f"no audio for track {track_id!r}; pass file_path= or "
+                                  "persist the Phase 2 source to tracks/{id}/audio.*"),
+                        "track_id": track_id}
+            file_path = str(cand[0])
+        if not os.path.exists(file_path):
+            return {"status": "error", "error": f"audio file not found: {file_path!r}"}
+
+        # 1. Ensure the analyzer chain (+ baked delay) is loaded.
+        chain = await self.earshot_load_analyzer_chain()
+        if chain.get("status") != "complete":
+            return {"status": "error", "error": "analyzer chain load failed",
+                    "chain_result": chain}
+        # Build the comparator semantics map. earshot_play ALWAYS spawns the
+        # streaming companion below, so its music dims (tempo/key/harmonic/onset)
+        # are always merged in — otherwise the companion would emit those types
+        # to the ambient stream with no comparator mapped to them. An explicit
+        # `semantics` arg overrides the LV2-chain dynamics/spectrum dims, but the
+        # companion dims are still added (the caller can't sensibly opt out of
+        # the music dims while the companion is running).
+        chain_semantics = {
+            **(semantics or chain.get("semantics") or {}),
+            **self._COMPANION_SEMANTICS,
+        }
+        # Poll the analyzer plugins but NOT the delay tower (plugin 4, 737 params
+        # — polling it would bloat the ambient stream). Matches the proven
+        # [0,1,2,3] config from earlier live sessions.
+        chain_plugin_ids = plugin_ids or [
+            int(k) for k in (chain.get("plugins") or {}).keys() if int(k) != 4
+        ]
+
+        # 2. Load the audiofile source (loop off, host-sync on, ports polled).
+        src = await self._load_audiofile_source(file_path, loop=False, host_sync=True)
+        if "error" in src:
+            return {"status": "error", "error": src["error"], "file_path": file_path}
+        src_pid, src_ports = src["plugin_id"], src["output_ports"]
+        if len(src_ports) < 2:
+            # Roll back the loaded source — same reason as the wiring-failure
+            # path below: a leftover audiofile would be polled as a fake
+            # analyzer plugin on the next earshot_play. (Transport not rolling.)
+            await run_blocking(self.carla.remove_plugin, src_pid, timeout=5.0,
+                               description="rollback remove source (<2 outputs)")
+            return {"status": "error", "plugin_id": src_pid,
+                    "error": f"source exposed <2 audio outputs: {src_ports}"}
+
+        # 3. Wire source -> chain entry + delay -> speakers (reuse the tested
+        #    delay-tower routing with the audiofile outputs as the source).
+        wire = await self.earshot_wire_delay_tower(
+            source_ports=src_ports[:2], disconnect_source_from_sink=False)
+        if wire.get("status") not in ("complete", "partial"):
+            # Remove the loaded source so it doesn't orphan a Carla slot — a
+            # leftover audiofile at the chain's tail would be polled as a fake
+            # analyzer plugin on the next earshot_play. (Transport not yet
+            # rolling, so no pause needed.)
+            await run_blocking(self.carla.remove_plugin, src_pid, timeout=5.0,
+                               description="rollback remove source (wiring failed)")
+            return {"status": "error", "error": "delay-tower wiring failed",
+                    "wire_result": wire, "source_plugin_id": src_pid}
+
+        # 4. Roll transport from 0; capture the exact start as the session anchor.
+        # The anchor is taken just before transport_play, so the first ~15ms of
+        # the track (one JACK buffer + scheduling) carry a slightly-negative
+        # track_time — the comparators already skip negative track_time, and
+        # capturing here is as accurate as possible given JACK schedules audio
+        # asynchronously anyway.
+        await run_blocking(self.carla.transport_relocate, 0, timeout=3.0,
+                           description="transport relocate 0")
+        playback_start_ms = now_ms()
+        await run_blocking(self.carla.transport_play, timeout=3.0,
+                           description="transport play")
+
+        # 5. Start the session anchored to the exact transport start — no
+        #    non-silence watcher needed (we KNOW t=0).
+        session = await self.earshot_start_session(
+            track_id=track_id, mode=mode, profile_name=profile_name,
+            oeuvre_hint=oeuvre_hint, plugin_ids=chain_plugin_ids,
+            semantics=chain_semantics, delay_seconds=delay_seconds, alias=alias,
+            sync_to_audio=False, playback_start_ms=playback_start_ms,
+            # Spawn the streaming companion on the same file so tempo/key/
+            # harmonic/onset land in the ambient stream and feed the music-domain
+            # comparators (their semantics were merged in above).
+            companion_audio_file=file_path,
+        )
+        if session.get("status") != "complete":
+            # roll back the audio so we don't leave it playing into a dead session
+            await run_blocking(self.carla.transport_pause, timeout=3.0, description="rollback pause")
+            await run_blocking(self.carla.remove_plugin, src_pid, timeout=5.0, description="rollback remove source")
+            return {"status": "error", "error": "session start failed",
+                    "session_result": session, "source_plugin_id": src_pid}
+
+        # Record the source on the session so end_session tears it down.
+        state = registry.get(session["session_id"])
+        if state is not None:
+            state.source_plugin_id = src_pid
+
+        return {
+            "status": "complete",
+            "session_id": session["session_id"],
+            "track_id": track_id,
+            "file_path": file_path,
+            "file_verified": src["file_verified"],
+            "source_plugin_id": src_pid,
+            "source_ports": src_ports,
+            "playback_start_ms": playback_start_ms,
+            "mode": mode,
+            "profile": session.get("profile"),
+            "baseline_summary": session.get("baseline_summary"),
+            "components_started": session.get("components_started"),
+            "note": ("Playing once through the chain + delay; agent reads raw, you "
+                     "hear it delayed by delay_seconds. Call earshot_stop(session_id) "
+                     "to stop playback + tear down."),
+        }
+
+    async def earshot_stop(self, session_id: str, **_kw) -> dict:
+        """Stop a co-listening session started by earshot_play: end the session
+        (which also pauses transport + removes the audiofile source) and return
+        the session summary."""
+        return await self.earshot_end_session(session_id=session_id)
 
     # ------------------------------------------------------------------
     # Phase L — session reflection
@@ -1146,6 +1508,48 @@ class EarshotTools:
     # ------------------------------------------------------------------
     # Phase J — session lifecycle (start / interject / correct_profile / end)
     # ------------------------------------------------------------------
+    @staticmethod
+    def _artist_context_digest(artist_id: str) -> Optional[str]:
+        """Compact artist-background digest from the oeuvre deep-research report,
+        attached to prose requests so commentary can reference who made the
+        track. Prefers the orchestrator-written prose synthesis (.md body) when
+        present; otherwise builds a digest from the structured .json scrape.
+        Returns None when no oeuvre data exists for the artist."""
+        if not artist_id:
+            return None
+        # Artist context is optional grounding — never let a read/parse failure
+        # escape and crash session construction. Worst case: return None.
+        try:
+            # Prefer a real prose synthesis if the orchestrator has written one
+            # (the stub .md only carries frontmatter + a placeholder comment).
+            md_path = dsp.oeuvre_path_for(artist_id)
+            if md_path.exists():
+                body = md_path.read_text(encoding="utf-8")
+                after_fm = body.split("---", 2)[-1].strip()
+                if after_fm and "Prose synthesis lives here" not in after_fm:
+                    return after_fm[:1500]
+            # Fall back to a digest of the structured scrape.
+            json_path = dsp.OEUVRE_DIR / f"{artist_id}.json"
+            if not json_path.exists():
+                return None
+            d = json.loads(json_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning("_artist_context_digest(%r) failed: %s", artist_id, e)
+            return None
+        parts = [f"Artist: {d.get('page_title') or artist_id}"]
+        desc = (d.get("profile_description") or "").strip()
+        if desc:
+            parts.append(desc[:500])
+        tags = d.get("tag_freq") or {}
+        if isinstance(tags, dict) and tags:
+            top = sorted(tags.items(), key=lambda kv: kv[1], reverse=True)[:6]
+            parts.append("Tags: " + ", ".join(t for t, _ in top))
+        rc, tc = d.get("release_count"), d.get("track_count")
+        if rc or tc:
+            parts.append(f"Catalog: {rc or '?'} releases, {tc or '?'} tracks")
+        digest = " | ".join(parts).strip()
+        return digest or None
+
     async def earshot_start_session(
         self,
         track_id: str,
@@ -1166,9 +1570,15 @@ class EarshotTools:
         sync_monitor_type: Optional[str] = None,
         sync_silence_threshold_db: float = -65.0,
         sync_timeout_s: float = 300.0,
+        playback_start_ms: Optional[int] = None,
         **_kw,
     ) -> dict:
         """Bring up a Phase 3 co-listening session.
+
+        `playback_start_ms`: when the caller controls playback (earshot_play
+        rolls Carla transport), it passes the exact start wall-clock so
+        track_time is anchored deterministically — no non-silence watcher.
+        When None (default), it's set to now_ms() and the sync watcher runs.
 
         Component graph (started in dependency order; consumers first so
         producers never fire into an unprepared queue):
@@ -1270,7 +1680,13 @@ class EarshotTools:
             }
 
         # 5. Component graph construction (everything except .start() calls)
-        playback_start_ms = now_ms()
+        # Use the caller-supplied anchor (earshot_play, deterministic) when
+        # given; otherwise anchor to now and let the sync watcher align.
+        if playback_start_ms is None:
+            playback_start_ms = now_ms()
+        else:
+            playback_start_ms = int(playback_start_ms)
+            sync_to_audio = False  # explicit anchor overrides the watcher
         delay_buffer_ms = int(delay_seconds * 1000)
 
         writer = AmbientStreamWriter(session_id)
@@ -1322,6 +1738,7 @@ class EarshotTools:
             baseline=baseline,
             playback_start_ms=playback_start_ms,
             delay_buffer_ms=delay_buffer_ms,
+            artist_context=self._artist_context_digest(baseline.artist_id),
         )
 
         # LV2 poller only when explicitly requested AND analysis_tools wired.
@@ -1754,6 +2171,27 @@ class EarshotTools:
                 logger.warning("earshot_end_session: commentary_logger.close raised: %s", e)
                 stop_errors.append(f"commentary_logger: {e}")
 
+        # Phase N — stop any audio this session was driving. ALWAYS pause the
+        # transport (cheap, and a session wired by hand without a recorded
+        # source at least goes quiet); then, if earshot_play recorded the
+        # audiofile source, remove that plugin — dropping its JACK ports is what
+        # actually cuts the speaker feed, independent of transport state.
+        if self.carla is not None:
+            from utils.async_helpers import run_blocking
+            try:
+                await run_blocking(self.carla.transport_pause, timeout=3.0,
+                                   description="end_session transport pause")
+            except Exception as e:
+                logger.warning("earshot_end_session: transport pause raised: %s", e)
+                stop_errors.append(f"transport_pause: {e}")
+            if state.source_plugin_id is not None:
+                try:
+                    await run_blocking(self.carla.remove_plugin, int(state.source_plugin_id),
+                                       timeout=5.0, description="end_session remove source")
+                except Exception as e:
+                    logger.warning("earshot_end_session: source remove raised: %s", e)
+                    stop_errors.append(f"source_plugin: {e}")
+
         registry.unregister(session_id)
         logger.info("earshot_end_session: %s torn down (%d stop errors)",
                     session_id, len(stop_errors))
@@ -1839,8 +2277,11 @@ class EarshotTools:
         json_path.write_text(json.dumps(result, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
         # Stub markdown if none exists so the path is real (postmortem rule #2:
         # `oeuvre_report_path` returned to the caller must point at a real file).
+        # Only stub for a COMPLETE ingest — a partial/error result must not leave
+        # the marker that the idempotency gate (earshot_ingest_artist) reads as
+        # "already done", or a failed scrape would never be retried.
         md_path = dsp.oeuvre_path_for(artist_id)
-        if not md_path.exists():
+        if result.get("status") == "complete" and not md_path.exists():
             frontmatter = [
                 "---",
                 f"artist_id: {artist_id}",

@@ -236,6 +236,12 @@ class CommentaryQueue:
         self._pushed_emissions = 0
         self._pushed_requests = 0
         self._delivered = 0
+        # Scheduler-assigned warrant per ProseRequest source_event_id. The
+        # honesty escape valve must be grounded in the MEASUREMENT (the
+        # scheduler's warrant), not in a value the orchestrator-LLM asserts
+        # for itself — otherwise "warranted enthusiasm" is circular. submit
+        # caps the LLM's echoed warrant against this authoritative record.
+        self._prose_warrants: dict = {}
         # Optional Phase L persistence — when supplied, every push() also
         # writes the item to commentary.jsonl. Session lifecycle code
         # constructs and closes the logger; the queue just holds the ref.
@@ -256,6 +262,11 @@ class CommentaryQueue:
                 self._pushed_emissions += 1
             elif isinstance(item, ProseRequest):
                 self._pushed_requests += 1
+                # Record the authoritative (scheduler-measured) warrant so a
+                # later submission can't self-authorize enthusiasm above it.
+                if item.source_event_id:
+                    self._prose_warrants[item.source_event_id] = float(
+                        (item.context or {}).get("warrant", 0.0))
             self._notify.set()
         # Log after releasing the lock; logger is single-threaded-safe
         # (one event loop) and small writes don't justify holding the lock.
@@ -305,14 +316,17 @@ class CommentaryQueue:
         deadline = now_ms_fn() + int(wait_seconds * 1000)
         while True:
             ready = await self.drain_ready(now_ms_fn())
-            # Re-filter by since_ms (orchestrator may have already seen some)
+            # Re-filter emissions by since_ms (orchestrator may have already
+            # seen some). ProseRequests ALWAYS pass through — drain_ready has
+            # already removed them from the queue, and they carry no
+            # "already delivered" semantics; dropping one here would lose it
+            # permanently and the orchestrator would never fulfil it.
             filtered = []
             for it in ready:
-                ts = (
-                    it.ts_user_clock_ms if isinstance(it, CommentaryEmission)
-                    else it.ts_target_user_clock_ms
-                )
-                if ts >= since_ms:
+                if isinstance(it, CommentaryEmission):
+                    if it.ts_user_clock_ms >= since_ms:
+                        filtered.append(it)
+                else:
                     filtered.append(it)
             if filtered or wait_seconds <= 0:
                 return filtered
@@ -328,6 +342,14 @@ class CommentaryQueue:
     def snapshot(self) -> list[CommentaryItem]:
         """Peek (no removal) — for diagnostics."""
         return list(self._items)
+
+    def warrant_for(self, source_event_id: str) -> float:
+        """Scheduler-assigned warrant for a ProseRequest's source event, or 0.0.
+
+        Authoritative: the honesty escape valve uses this (capped against the
+        orchestrator's echoed value) so enthusiasm can never be granted above
+        what the measurement actually warranted."""
+        return float(self._prose_warrants.get(source_event_id, 0.0))
 
     def stats(self) -> dict:
         return {

@@ -81,8 +81,6 @@ ANTI_SPOILER_PATTERNS = [
 ENTHUSIASM_PATTERNS = [
     r"\bamazing\b",
     r"\bincredible\b",
-    r"\bmagnificent\b",
-    r"\bblazingly\b",
     r"\bphenomenal\b",
     r"\bawesome\b",
     r"\bepic\b",
@@ -92,7 +90,9 @@ ENTHUSIASM_PATTERNS = [
     r"\bgenius\b",
     r"\bbrilliant\b",
     r"\bgorgeous\b",
-    r"\b100%\s+(?:secure|fire|perfect)\b",
+    # NOTE: "blazingly", "magnificent", "100%" live in ALWAYS_BLOCKED_MARKETING
+    # (blocked regardless of warrant) — kept out of this list to avoid
+    # double-reporting the same token at warrant=0.
 ]
 
 # Feeling / taste claims — first-person experience statements forbidden
@@ -102,12 +102,22 @@ FEELING_PATTERNS = [
     r"\bi\s+feel\b",
     r"\bi\s+(?:adore|enjoy|hate|dislike)\b",
     r"\bthis moves me\b",
-    r"\b(?:gets|got|going)\s+me\b",     # "this gets me", "going me"
+    r"\bthis\s+(?:gets|got)\s+me\b",    # "this gets me" / "this got me" (feeling claim)
     r"\bi\s+can\'?t\s+(?:get over|stop)\b",
     r"\bmy\s+(?:taste|preference)\b",
     r"\bthis\s+is\s+for\s+me\b",
     r"\bnot\s+(?:my|for)\s+(?:thing|me)\b",
     r"\bi\s+prefer\b",
+]
+
+# Pure marketing tokens — blocked even when enthusiasm is warranted by a
+# measured event. Warranted enthusiasm about a real surprise is honest; these
+# are sales language regardless of warrant.
+ALWAYS_BLOCKED_MARKETING = [
+    r"\bblazingly\b",
+    r"\b100%\b",
+    r"\bmagnificent\b",
+    r"\bflawless\b",
 ]
 
 
@@ -133,6 +143,11 @@ class HonestyValidator:
     extensions for genres with their own clichés to avoid).
     """
 
+    # Event-score multiple (magnitude / threshold) at or above which
+    # enthusiasm-about-the-event is permitted. Below it, enthusiasm is
+    # treated as performed/un-grounded and blocked as before.
+    WARRANT_BAR = 1.0
+
     def __init__(
         self,
         *,
@@ -152,13 +167,24 @@ class HonestyValidator:
             re.compile(p, re.IGNORECASE)
             for p in (feeling_patterns or FEELING_PATTERNS)
         ]
+        self._always_blocked = [
+            re.compile(p, re.IGNORECASE) for p in ALWAYS_BLOCKED_MARKETING
+        ]
 
-    def validate(self, content: str) -> ValidationResult:
+    def validate(self, content: str, *, warrant: float = 0.0) -> ValidationResult:
         """Check content against all honesty rules.
 
         Returns a ValidationResult. `ok=False` when any rule matches;
         `reasons` lists the rule(s) that fired with the offending phrase
         excerpted so callers / orchestrators can revise.
+
+        `warrant` (default 0.0) is the originating event's score multiple.
+        Anti-spoiler and feeling/taste are enforced unconditionally. The
+        enthusiasm block is RELAXED when `warrant >= WARRANT_BAR` — a
+        genuinely surprising measured event warrants a strong reaction —
+        except for the always-blocked marketing tokens, which stay blocked
+        regardless of warrant. The default warrant=0.0 preserves prior
+        behavior for every existing caller.
 
         Empty / whitespace-only content is treated as `ok=True` (silence
         is honest; the scheduler enforces SILENT-level non-queueing
@@ -176,11 +202,21 @@ class HonestyValidator:
                     f"anti-spoiler violation: {m.group(0)!r} references future content"
                 )
 
-        for rx in self._enthusiasm:
+        enthusiasm_allowed = warrant >= self.WARRANT_BAR
+        if not enthusiasm_allowed:
+            for rx in self._enthusiasm:
+                m = rx.search(content)
+                if m:
+                    reasons.append(
+                        f"performed-enthusiasm violation: {m.group(0)!r} is marketing language "
+                        "(unwarranted — no measured event backs it)"
+                    )
+
+        for rx in self._always_blocked:
             m = rx.search(content)
             if m:
                 reasons.append(
-                    f"performed-enthusiasm violation: {m.group(0)!r} is marketing language"
+                    f"marketing violation: {m.group(0)!r} is sales language, blocked regardless of warrant"
                 )
 
         for rx in self._feeling:

@@ -171,6 +171,13 @@ class PredictionComparator:
         self.calibration_warmup_samples = int(calibration_warmup_samples)
         self._calibration_offset: dict[Dimension, float] = {}
         self._calibration_count: dict[Dimension, int] = {}
+        # Unlike the drift baseline (a continuous interpolated envelope), the
+        # per-section `expected` value steps at each section boundary. The
+        # calibration offset tracks one section's (current - expected)
+        # relationship; carrying it across a boundary makes magnitude spike
+        # on the step alone (false positive). We reset calibration for a
+        # dimension whenever its containing section changes.
+        self._last_section: dict[Dimension, int] = {}
 
         self._windows: dict[Dimension, deque] = {
             dim: deque(maxlen=self.window_samples.get(dim, 16))
@@ -271,6 +278,17 @@ class PredictionComparator:
             self._stats["events_suppressed_no_expectation"] += 1
             return
 
+        # The per-section `expected` value steps at section boundaries; reset
+        # this dimension's calibration when the section changes so the stale
+        # offset doesn't manufacture a false prediction error on the step
+        # alone. After a reset the warmup gate re-engages, suppressing events
+        # until the new section's offset re-establishes (~warmup samples).
+        section_index = self.expectations.current_section_index(track_time_s)
+        if section_index is not None and self._last_section.get(dim) != section_index:
+            self._last_section[dim] = section_index
+            self._calibration_offset.pop(dim, None)
+            self._calibration_count.pop(dim, None)
+
         windowed_current = median(v for _, v in window)
         # Calibrated offset: same pattern as DriftComparator. A constant gain
         # mismatch between source-of-prediction (LLM, baseline) and live signal
@@ -302,8 +320,8 @@ class PredictionComparator:
         # rule" principle.
         score = round(magnitude / threshold, 3) if threshold > 0 else magnitude
 
-        section_index = self.expectations.current_section_index(track_time_s)
-
+        # section_index was already resolved above (for the calibration reset)
+        # and reused here so the same track-time isn't looked up twice.
         # PredictionErrorEvent's schema carries `dimensions: list` and dict-shaped
         # `expected`/`actual` so a single emission can describe correlated error
         # across multiple dimensions ("tempo went up AND dynamics dropped at the

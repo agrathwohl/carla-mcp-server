@@ -1124,6 +1124,16 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                     "source_event_id": {"type": "string", "default": ""},
                     "dimensions": {"type": "array", "items": {"type": "string"}},
                     "score": {"type": "number", "default": 0.0},
+                    "warrant": {
+                        "type": "number", "default": 0.0,
+                        "description": (
+                            "Echo the ProseRequest's `warrant` (event-score multiple). "
+                            "A high warrant (>=1.0) permits warranted enthusiasm about a "
+                            "genuinely surprising measured event past the honesty filter; "
+                            "anti-spoiler/taste/marketing stay blocked regardless. "
+                            "Default 0.0 = no enthusiasm latitude."
+                        ),
+                    },
                 },
                 "required": ["session_id", "ts_target_user_clock_ms", "intensity", "content"],
             },
@@ -1467,6 +1477,115 @@ def create_carla_tool_registry() -> MCPToolRegistry:
             examples=[
                 "earshot_wire_delay_tower(source_ports=['PulseAudio_JACK_Sink:front-left', 'PulseAudio_JACK_Sink:front-right'])",
             ],
+        ),
+        ToolDefinition(
+            name="earshot_load_source",
+            description=(
+                "Phase N SPIKE — load Carla's internal 'audiofile' player on a local file "
+                "and (optionally) wire it straight to system playback + roll transport, to "
+                "verify programmatic JACK playback works before the real earshot_play is "
+                "built. Returns the plugin id + its JACK output port names + transport state. "
+                "If you hear the file, audiofile playback is confirmed."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Absolute path to a local audio file (wav/flac/etc.).",
+                    },
+                    "to_speakers": {
+                        "type": "boolean", "default": True,
+                        "description": "Wire the source output straight to system:playback_1/2 so you can hear it.",
+                    },
+                    "autoplay": {
+                        "type": "boolean", "default": True,
+                        "description": "Relocate transport to 0 and start playing.",
+                    },
+                },
+                "required": ["file_path"],
+            },
+            examples=[
+                "earshot_load_source(file_path='/home/gwohl/Downloads/track.wav')",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_stop_source",
+            description="Phase N SPIKE cleanup — pause transport and remove the audiofile source plugin.",
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {
+                        "type": "integer",
+                        "description": "Plugin id returned by earshot_load_source (to remove it).",
+                    },
+                },
+                "required": [],
+            },
+            examples=["earshot_stop_source(plugin_id=5)"],
+        ),
+        ToolDefinition(
+            name="earshot_play",
+            description=(
+                "Phase N — one-call co-listening. Loads the analyzer chain, loads the track's "
+                "audio into Carla's audiofile player, wires source -> chain (agent reads raw) "
+                "+ delay -> speakers (user hears it delayed), rolls transport from 0, and starts "
+                "the earshot session anchored to the EXACT transport start (deterministic sync, "
+                "no non-silence watcher). Plays the track ONCE (loop disabled). Replaces the "
+                "manual mpv + PulseAudio + jack_connect path entirely. Stop with earshot_stop."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "track_id": {
+                        "type": "string",
+                        "description": "Phase-2-analyzed track id (its baseline drives the comparators).",
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Audio file to play; if omitted, uses tracks/{track_id}/audio.*",
+                    },
+                    "mode": {"type": "string", "enum": ["preview", "live"], "default": "live"},
+                    "profile_name": {
+                        "type": "string", "default": "experimental",
+                        "description": "Profile stem, or 'auto' for the selector.",
+                    },
+                    "oeuvre_hint": {"type": "string", "description": "Genre hint when profile_name='auto'."},
+                    "plugin_ids": {
+                        "type": "array", "items": {"type": "integer"},
+                        "description": "Override LV2 poll plugin ids (defaults to the loaded chain).",
+                    },
+                    "semantics": {
+                        "type": "object", "additionalProperties": {"type": "string"},
+                        "description": "Override ambient type->Dimension map (defaults to chain-derived).",
+                    },
+                    "delay_seconds": {"type": "number", "default": 5.0},
+                    "alias": {"type": "string", "description": "Explicit session id."},
+                },
+                "required": ["track_id"],
+            },
+            examples=[
+                "earshot_play(track_id='SM012', file_path='/home/gwohl/SM012.flac')",
+                "earshot_play(track_id='SM012')  # uses tracks/SM012/audio.*",
+            ],
+        ),
+        ToolDefinition(
+            name="earshot_stop",
+            description=(
+                "Phase N — stop a co-listening session started by earshot_play: ends the session "
+                "AND stops playback (pauses transport + removes the audiofile source). Writes the "
+                "session summary; ambient/commentary JSONL stay on disk for reflection."
+            ),
+            handler="earshot_tools",
+            input_schema={
+                "type": "object",
+                "properties": {"session_id": {"type": "string"}},
+                "required": ["session_id"],
+            },
+            examples=["earshot_stop(session_id='earshot_SM012_a1b2c3d4')"],
         ),
     ]
 

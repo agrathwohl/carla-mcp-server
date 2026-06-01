@@ -47,6 +47,34 @@ class Dimension(str, Enum):
     LUFS_INTEGRATED = "lufs_integrated"
     SPECTRAL_CENTROID = "spectral_centroid"
     ONSET_DENSITY = "onset_density"
+    CHORD_CHANGE_RATE = "chord_change_rate"   # chroma movement vs previous frame
+    HARMONIC_TENSION = "harmonic_tension"     # chroma ambiguity (entropy), 0..1
+
+
+# Which dimensions are mix-engineering metrics vs musical-content metrics.
+# The scheduler routes by domain: MIX -> MixAssist-grounded phrasing,
+# MUSIC -> orchestrator-LLM reaction (MixAssist is a mixing dataset, not
+# music-content). Structural events (section build/release) are MUSIC.
+DIMENSION_DOMAIN: dict = {
+    Dimension.DYNAMIC_ENVELOPE: "mix",
+    Dimension.LUFS_INTEGRATED: "mix",
+    Dimension.SPECTRAL_CENTROID: "mix",
+    Dimension.TEMPO: "music",
+    Dimension.KEY: "music",
+    Dimension.ONSET_DENSITY: "music",
+    Dimension.CHORD_CHANGE_RATE: "music",
+    Dimension.HARMONIC_TENSION: "music",
+}
+
+
+def domain_for(dimension) -> str:
+    """Return "mix" or "music" for a Dimension. Defaults to "mix" (fail-safe:
+    an unknown dimension keeps current MixAssist behavior) with a warning."""
+    d = DIMENSION_DOMAIN.get(dimension)
+    if d is None:
+        logger.warning("domain_for: unknown dimension %r, defaulting to 'mix'", dimension)
+        return "mix"
+    return d
 
 
 # ----------------------------------------------------------------------
@@ -76,6 +104,8 @@ class ComparatorThresholds:
     lufs_integrated_lu: float = 3.0
     spectral_centroid_hz: float = 400.0
     onset_density_relative: float = 0.5  # 50% deviation
+    chord_change_rate_abs: float = 0.20  # absolute change in the 0..1 rate
+    harmonic_tension_abs: float = 0.15   # absolute change in 0..1 entropy
     key_change_fires: bool = True
 
     def threshold_for(self, dimension: Dimension) -> Optional[float]:
@@ -90,6 +120,10 @@ class ComparatorThresholds:
             return self.spectral_centroid_hz
         if dimension == Dimension.ONSET_DENSITY:
             return self.onset_density_relative
+        if dimension == Dimension.CHORD_CHANGE_RATE:
+            return self.chord_change_rate_abs
+        if dimension == Dimension.HARMONIC_TENSION:
+            return self.harmonic_tension_abs
         return None  # key is categorical
 
 
@@ -119,8 +153,8 @@ class DriftEvent:
     window_size_samples: int      # how many samples in the rolling estimate
     # Running EMA of (current - baseline), subtracted from raw drift to
     # cancel out steady-state offsets (e.g. playback volume attenuation).
-    # 0.0 by default keeps the field backward-compatible with comparators
-    # that don't do calibration. None when not applicable (e.g. KEY dim).
+    # None by default for comparators that don't do calibration and for
+    # the categorical KEY dimension where it doesn't apply.
     calibration_offset: Optional[float] = None
     event: str = field(default="drift", init=False)
 
@@ -197,6 +231,27 @@ class PredictionErrorEvent:
         return d
 
 
+@dataclass(frozen=True)
+class StructuralEvent:
+    """A section transition with a measured energy change — build or release.
+
+    Emitted by the boundary detector when the section just entered differs in
+    mean RMS from the prior one beyond threshold. Always MUSIC-domain. Fires
+    AT the crossing (ts anchored to the new section's start) so the reaction
+    lands on the user's clock as the section begins (anti-spoiler-correct).
+    """
+    kind: str                    # "section_build" | "section_release"
+    from_section: int
+    to_section: int
+    energy_delta_db: float       # to_section mean RMS minus from_section mean RMS
+    ts_ms: int
+    track_time_s: float
+    event: str = field(default="structural", init=False)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 def _coerce(v: Any) -> Any:
     if isinstance(v, Enum):
         return v.value
@@ -204,7 +259,7 @@ def _coerce(v: Any) -> Any:
 
 
 # Union type used by the queue + scheduler.
-ComparatorEvent = Union[DriftEvent, PredictionErrorEvent, BoundaryApproachingEvent]
+ComparatorEvent = Union[DriftEvent, PredictionErrorEvent, BoundaryApproachingEvent, StructuralEvent]
 
 
 # ----------------------------------------------------------------------
@@ -225,6 +280,7 @@ class EventQueue:
         self._pushed_drift = 0
         self._pushed_prediction = 0
         self._pushed_boundary = 0
+        self._pushed_structural = 0
         self._popped = 0
 
     async def push(self, event: ComparatorEvent) -> None:
@@ -235,6 +291,8 @@ class EventQueue:
             self._pushed_prediction += 1
         elif isinstance(event, BoundaryApproachingEvent):
             self._pushed_boundary += 1
+        elif isinstance(event, StructuralEvent):
+            self._pushed_structural += 1
 
     async def pop(self) -> ComparatorEvent:
         ev = await self._q.get()
@@ -250,5 +308,6 @@ class EventQueue:
             "pushed_drift": self._pushed_drift,
             "pushed_prediction": self._pushed_prediction,
             "pushed_boundary": self._pushed_boundary,
+            "pushed_structural": self._pushed_structural,
             "popped": self._popped,
         }

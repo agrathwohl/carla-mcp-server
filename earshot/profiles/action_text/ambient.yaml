@@ -56,6 +56,30 @@ prediction_error_onset_density:
   - { prefix: ">>>", text: "more events than I projected" }
   - { prefix: "...", text: "sparser than I held" }
 
+drift_chord_change_rate:
+  - { prefix: ">>>", text: "the harmony is moving more" }
+  - { prefix: "...", text: "the chords settled into place" }
+
+prediction_error_chord_change_rate:
+  - { prefix: "^^^", text: "more harmonic motion than I held" }
+  - { prefix: "...", text: "stiller than the model expected" }
+
+drift_harmonic_tension:
+  - { prefix: "^^^", text: "tension gathering in the harmony" }
+  - { prefix: "...", text: "it settled and resolved" }
+
+prediction_error_harmonic_tension:
+  - { prefix: "^^^", text: "more tension than I projected" }
+  - { prefix: "...", text: "clearer than the model held" }
+
+structural_build:
+  - { prefix: ">>>", text: "the field opens up here" }
+  - { prefix: "^^^", text: "it swells into this section" }
+
+structural_release:
+  - { prefix: "...", text: "the layers recede here" }
+  - { prefix: "...", text: "it thins into this section" }
+
 generic:
   - { prefix: "...", text: "the field shifted" }
   - { prefix: "^^^", text: "the texture moved" }

@@ -36,6 +36,8 @@ from pathlib import Path
 
 import numpy as np
 
+from chroma_features import chord_change_rate, harmonic_tension
+
 # Suppress TF / oneDNN chatter that bleeds into stderr.
 import os
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
@@ -191,6 +193,40 @@ def analyze(audio_path: Path, output_path: Path, track_id: str, artist_id: str) 
         section_map = []
         section_error = str(e)
 
+    # ---- Harmonic features (chord-change-rate + tension over time) ----
+    # Reuses a chroma matrix (same call used for segmentation). Per-frame
+    # tension (chroma entropy) and inter-frame change-rate (chroma movement);
+    # averaged globally and per section. Guarded: on failure the fields are
+    # absent -> Phase2Baseline returns None -> comparators skip (graceful).
+    try:
+        chroma_h = librosa.feature.chroma_cqt(y=y, sr=sr)            # (12, F)
+        frame_times = librosa.frames_to_time(np.arange(chroma_h.shape[1]), sr=sr)
+        tensions = [harmonic_tension(chroma_h[:, i]) for i in range(chroma_h.shape[1])]
+        changes = [chord_change_rate(chroma_h[:, i - 1], chroma_h[:, i])
+                   for i in range(1, chroma_h.shape[1])]
+        chord_change_rate_mean = round(float(np.mean(changes)), 4) if changes else 0.0
+        harmonic_tension_mean = round(float(np.mean(tensions)), 4) if tensions else 0.0
+        section_harmonic = {}
+        for sec in section_map:
+            lo, hi = sec["start_s"], sec["end_s"]
+            t_idx = [i for i, t in enumerate(frame_times) if lo <= t < hi]
+            if not t_idx:
+                continue
+            sec_tension = float(np.mean([tensions[i] for i in t_idx]))
+            # change INTO frame i is changes[i-1]; only frames with i>=1 have one
+            ch = [changes[i - 1] for i in t_idx if i >= 1]
+            sec_change = float(np.mean(ch)) if ch else 0.0
+            section_harmonic[str(sec["index"])] = {
+                "chord_change_rate": round(sec_change, 4),
+                "harmonic_tension": round(sec_tension, 4),
+            }
+        harmonic_error = None
+    except Exception as e:
+        chord_change_rate_mean = 0.0
+        harmonic_tension_mean = 0.0
+        section_harmonic = {}
+        harmonic_error = str(e)
+
     # ---- Whisper lyrics ----
     try:
         from faster_whisper import WhisperModel
@@ -200,9 +236,10 @@ def analyze(audio_path: Path, output_path: Path, track_id: str, artist_id: str) 
             beam_size=5,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 1000},
-            word_timestamps=False,
+            word_timestamps=True,
         )
         transcript = []
+        transcript_words = []
         for seg in segments:
             transcript.append({
                 "start_s": round(seg.start, 3),
@@ -211,8 +248,21 @@ def analyze(audio_path: Path, output_path: Path, track_id: str, artist_id: str) 
                 "avg_logprob": round(seg.avg_logprob, 4),
                 "no_speech_prob": round(seg.no_speech_prob, 4),
             })
+            # Word-level timing enables anti-spoiler-safe lyric surfacing: the
+            # baseline can return only words already sung at a given time,
+            # instead of a whole coarse segment that runs minutes ahead.
+            for w in (seg.words or []):
+                word_text = w.word.strip()
+                if not word_text:
+                    continue
+                transcript_words.append({
+                    "start_s": round(w.start, 3),
+                    "end_s": round(w.end, 3),
+                    "word": word_text,
+                })
     except Exception as e:
         transcript = []
+        transcript_words = []
         transcript_error = str(e)
     else:
         transcript_error = None
@@ -239,6 +289,8 @@ def analyze(audio_path: Path, output_path: Path, track_id: str, artist_id: str) 
             "spectral_centroid_mean_hz": round(float(cents_arr.mean()), 1),
             "spectral_centroid_std_hz": round(float(cents_arr.std()), 1),
             "dynamic_range_db": round(dynamic_range_db, 2),
+            "chord_change_rate_mean": chord_change_rate_mean,
+            "harmonic_tension_mean": harmonic_tension_mean,
         },
         "beat_times_s_sample": beats[:50],
         "rms_envelope_db": [
@@ -247,8 +299,12 @@ def analyze(audio_path: Path, output_path: Path, track_id: str, artist_id: str) 
         ],
         "section_map": section_map,
         "section_error": section_error,
+        "section_harmonic": section_harmonic,
+        "harmonic_error": harmonic_error,
         "transcript": transcript,
         "transcript_segment_count": len(transcript),
+        "transcript_word_count": len(transcript_words),
+        "transcript_words": transcript_words,
         "transcript_error": transcript_error,
     }
 

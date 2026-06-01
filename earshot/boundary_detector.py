@@ -35,7 +35,7 @@ import logging
 from typing import Optional
 
 from earshot.ambient_stream import now_ms
-from earshot.comparators.events import BoundaryApproachingEvent, EventQueue
+from earshot.comparators.events import BoundaryApproachingEvent, EventQueue, StructuralEvent
 from earshot.phase2_baseline import Phase2Baseline
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ class BoundaryDetector:
         playback_start_ms: int,
         lookahead_seconds: float = DEFAULT_LOOKAHEAD_S,
         tick_interval_s: float = DEFAULT_TICK_INTERVAL_S,
+        structural_threshold_db: float = 3.0,
     ):
         if playback_start_ms <= 0:
             raise ValueError(f"playback_start_ms must be positive, got {playback_start_ms}")
@@ -85,11 +86,15 @@ class BoundaryDetector:
         self.playback_start_ms = playback_start_ms
         self.lookahead_seconds = float(lookahead_seconds)
         self.tick_interval_s = float(tick_interval_s)
+        self.structural_threshold_db = float(structural_threshold_db)
 
         # Section indexes we've already fired for; ensures each boundary
         # produces exactly one event no matter how many ticks fall inside
         # the lookahead window.
         self._fired_for_section: set[int] = set()
+        # Sections we've already emitted a StructuralEvent for (fires once,
+        # at the crossing, anchored to the section start).
+        self._fired_structural: set[int] = set()
 
         self._task: Optional[asyncio.Task] = None
         self._running = False
@@ -98,6 +103,7 @@ class BoundaryDetector:
             "events_emitted": 0,
             "events_debounced": 0,
             "ticks_past_end_of_track": 0,
+            "structural_emitted": 0,
         }
 
     # ------------------------------------------------------------------
@@ -150,6 +156,36 @@ class BoundaryDetector:
         track_time_s = (wall_ms - self.playback_start_ms) / 1000.0
         if track_time_s < 0:
             return  # playback hasn't started
+
+        # Structural build/release: fire AT the crossing into a section (not
+        # ahead), anchored to that section's start so the reaction lands on the
+        # user's clock as the section begins (anti-spoiler-correct). Runs every
+        # tick, independent of the look-ahead boundary logic below.
+        cur = self.baseline.section_at(track_time_s)
+        if cur is not None and cur["index"] > 0 and cur["index"] not in self._fired_structural:
+            to_idx = cur["index"]
+            from_idx = to_idx - 1
+            self._fired_structural.add(to_idx)  # debounce regardless of outcome
+            to_rms = self.baseline.section_mean_rms_db(to_idx)
+            from_rms = self.baseline.section_mean_rms_db(from_idx)
+            if to_rms is not None and from_rms is not None:
+                delta = to_rms - from_rms
+                if abs(delta) >= self.structural_threshold_db:
+                    start_s = cur["start_s"]
+                    ev = StructuralEvent(
+                        kind=("section_build" if delta > 0 else "section_release"),
+                        from_section=from_idx,
+                        to_section=to_idx,
+                        energy_delta_db=round(delta, 2),
+                        ts_ms=self.playback_start_ms + int(start_s * 1000),
+                        track_time_s=round(start_s, 3),
+                    )
+                    await self.queue.push(ev)
+                    self._stats["structural_emitted"] += 1
+                    logger.info(
+                        "structural %s fired: section %d->%d (%.1f dB) at t=%.1fs",
+                        ev.kind, from_idx, to_idx, delta, start_s,
+                    )
 
         nxt = self.baseline.next_boundary(track_time_s)
         if nxt is None:
