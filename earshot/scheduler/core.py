@@ -96,6 +96,18 @@ class Scheduler:
         # reaction in who made the track. None when no oeuvre report exists.
         self.artist_context = artist_context
 
+        # Global emission cooldown — bounds the USER-FACING rate so a noisy
+        # comparator stream (e.g. continuous dims drifting against a global-mean
+        # baseline) doesn't bury the listener. After a drift/prediction line is
+        # emitted, further ones are suppressed for emission_cooldown_ms UNLESS
+        # the new event's score clears cooldown_override_ratio × the last emitted
+        # score — so a genuinely bigger moment still interrupts. Structural
+        # (section) + boundary events bypass this; they're sparse and important.
+        self.emission_cooldown_ms = 7000
+        self.cooldown_override_ratio = 1.8
+        self._last_emit_ms = 0
+        self._last_emit_score = 0.0
+
         # Per-event-type history of recent action-text choices, used to
         # avoid repeating the same phrase within
         # `profile.action_text_repeat_window_seconds`. Each entry is
@@ -112,6 +124,7 @@ class Scheduler:
             "prose_requests_out": 0,
             "silent": 0,
             "suppressed_silence_zone": 0,
+            "suppressed_cooldown": 0,
             "suppressed_honesty": 0,
             "suppressed_no_catalog": 0,
             "by_level": {l.name: 0 for l in IntensityLevel},
@@ -235,6 +248,20 @@ class Scheduler:
         if level == IntensityLevel.SILENT:
             self._stats["silent"] += 1
             return
+
+        # Global emission cooldown (drift/prediction only — structural + boundary
+        # events returned earlier and intentionally bypass this). Suppress unless
+        # the cooldown has elapsed OR this event is a notably bigger moment than
+        # the last thing we said. This is what keeps a noisy comparator stream
+        # from burying the listener with ~one line every couple of seconds.
+        since_last = event.ts_ms - self._last_emit_ms
+        if (self._last_emit_ms
+                and since_last < self.emission_cooldown_ms
+                and score < self._last_emit_score * self.cooldown_override_ratio):
+            self._stats["suppressed_cooldown"] += 1
+            return
+        self._last_emit_ms = event.ts_ms
+        self._last_emit_score = score
 
         ts_user_clock = event.ts_ms + self.delay_buffer_ms
         domain = self._event_domain(event)

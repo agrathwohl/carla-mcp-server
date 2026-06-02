@@ -575,9 +575,69 @@ class CarlaController:
         if success:
             del self.plugins[plugin_id]
             logger.info(f"Removed plugin {plugin_id}")
-        
+
         return success
-    
+
+    def add_internal_plugin(self, label: str, name: str = None) -> Optional[int]:
+        """Load a Carla built-in (internal) plugin by label, e.g. 'audiofile'.
+
+        Internal plugins are addressed by LABEL with an empty filename, so this
+        bypasses the file-path validation in load_plugin(). Returns the new
+        plugin id, or None on failure. Registers the plugin in self.plugins so
+        remove_plugin() works on it.
+        """
+        if not self.engine_running:
+            self.start_engine()
+        initial = self.host.get_current_plugin_count()
+        ok = self.host.add_plugin(
+            BINARY_NATIVE, PLUGIN_INTERNAL, "", name or label, label, 0, None, 0
+        )
+        if not ok:
+            err = self.host.get_last_error() or "unknown error"
+            logger.error(f"add_internal_plugin('{label}') failed: {err}")
+            return None
+        if self.host.get_current_plugin_count() <= initial:
+            logger.error(f"add_internal_plugin('{label}'): plugin count did not increase")
+            return None
+        plugin_id = self.host.get_current_plugin_count() - 1
+        info = self.host.get_plugin_info(plugin_id)
+        plugin_name = (info.get('name') if info else None) or name or label
+        self.plugins[plugin_id] = {
+            'id': plugin_id, 'path': '', 'type': PluginType.INTERNAL,
+            'name': plugin_name, 'active': False, 'volume': 1.0,
+            'dry_wet': 1.0, 'parameters': {}, 'preset': None,
+        }
+        logger.info(f"Internal plugin '{label}' loaded as id {plugin_id} (name='{plugin_name}')")
+        return plugin_id
+
+    def set_plugin_file(self, plugin_id: int, file_path: str) -> bool:
+        """Set the source file on a file-playing internal plugin (audiofile/
+        midifile) via custom data (key='file')."""
+        return self.host.set_custom_data(
+            plugin_id, CUSTOM_DATA_TYPE_STRING, "file", file_path
+        )
+
+    def get_plugin_file(self, plugin_id: int) -> str:
+        """Read back the source file path of a file-playing internal plugin
+        (uses the same custom-data type as set_plugin_file). Empty string if
+        unset. Use to verify set_plugin_file took effect (it is void)."""
+        return self.host.get_custom_data_value(
+            plugin_id, CUSTOM_DATA_TYPE_STRING, "file"
+        )
+
+    # --- JACK transport (drives the audiofile internal plugin) ---------------
+    def transport_play(self):
+        self.host.transport_play()
+
+    def transport_pause(self):
+        self.host.transport_pause()
+
+    def transport_relocate(self, frame: int):
+        self.host.transport_relocate(int(frame))
+
+    def get_transport_frame(self) -> int:
+        return int(self.host.get_current_transport_frame())
+
     def set_plugin_active(self, plugin_id: int, active: bool):
         """Activate or bypass a plugin"""
         if plugin_id not in self.plugins:

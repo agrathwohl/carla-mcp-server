@@ -90,8 +90,8 @@ class DriftComparator:
         semantics: dict[str, Dimension],
         thresholds: Optional[ComparatorThresholds] = None,
         window_samples: Optional[dict[Dimension, int]] = None,
-        debounce_seconds: float = 5.0,
-        calibration_alpha: float = 0.01,
+        debounce_seconds: float = 10.0,
+        calibration_alpha: float = 0.03,
         calibration_warmup_samples: int = 16,
     ):
         if playback_start_ms <= 0:
@@ -115,7 +115,10 @@ class DriftComparator:
         # calibration: real_drift = (current - baseline) - calibration_offset,
         # so only *changes* in the relationship fire events, not constant offset.
         # `alpha` controls how quickly calibration follows a fader move:
-        #   alpha=0.01 → ~100-sample memory → at 4 Hz = 25s to half-track a change.
+        #   alpha=0.03 → ~33-sample memory → at 4 Hz ≈ 8s to half-track a change.
+        # (Higher than the original 0.01 so sustained section-level shifts get
+        # absorbed into the offset instead of firing for ~25s; the per-dim
+        # debounce + the scheduler's emission cooldown bound the rate further.)
         # Warmup gates event emission until we've seen enough samples to trust
         # the offset estimate.
         self.calibration_alpha = float(calibration_alpha)

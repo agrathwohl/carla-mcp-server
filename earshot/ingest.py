@@ -1209,18 +1209,23 @@ class EarshotTools:
                     outs.append(ln)
             return outs
 
-        # Poll for ports. Carla exposes them a process-cycle after load, but
-        # under CPU/jackd load (e.g. immediately after a Phase 2 essentia run)
-        # the internal audiofile's JACK port registration can lag several
-        # seconds. Poll generously — the loop breaks the instant the ports
-        # appear, so a fast (idle-system) load pays no extra latency.
+        # Wait for the JACK ports. CRITICAL: Carla registers a new plugin's
+        # ports from its engine_idle thread, which must hold the GIL to call
+        # into libcarla. A TIGHT poll here (rapid back-to-back run_blocking
+        # jack_lsp subprocess spawns) starves that thread of the GIL, so the
+        # ports never appear until the poll stops — measured: they register
+        # within ~3ms of the loop ending, regardless of how long we polled.
+        # The fix is to YIELD generously: a plain asyncio.sleep releases the GIL
+        # so engine_idle can run, and we issue at most one jack_lsp per interval
+        # instead of hammering. Sleeping FIRST gives registration uncontended
+        # time before the initial check.
         out_ports = []
-        for _ in range(60):  # up to ~6s under load
+        for _ in range(16):  # ~16 * 0.4s = up to ~6.4s, GIL-friendly cadence
+            await asyncio.sleep(0.4)
             lines = await run_blocking(_jack_lines, timeout=6.0, description="jack_lsp poll")
             out_ports = _audio_outs(lines)
             if out_ports:
                 break
-            await asyncio.sleep(0.1)
 
         return {
             "plugin_id": pid, "name": pname,
