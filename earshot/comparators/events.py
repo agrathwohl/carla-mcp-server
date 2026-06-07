@@ -156,6 +156,10 @@ class DriftEvent:
     # None by default for comparators that don't do calibration and for
     # the categorical KEY dimension where it doesn't apply.
     calibration_offset: Optional[float] = None
+    # The last value this comparator REPORTED for this dimension (the running
+    # "current state"), so prose narrates previous -> current instead of
+    # re-quoting the static baseline every time. None on the first report.
+    previous: Any = None
     event: str = field(default="drift", init=False)
 
     def to_dict(self) -> dict:

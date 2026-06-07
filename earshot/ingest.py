@@ -1307,6 +1307,7 @@ class EarshotTools:
         semantics: Optional[dict] = None,
         delay_seconds: float = 5.0,
         alias: Optional[str] = None,
+        auto_orchestrate: bool = True,
         **_kw,
     ) -> dict:
         """Phase N — one-call co-listening: load the analyzer chain, load the
@@ -1412,6 +1413,7 @@ class EarshotTools:
             # harmonic/onset land in the ambient stream and feed the music-domain
             # comparators (their semantics were merged in above).
             companion_audio_file=file_path,
+            auto_orchestrate=auto_orchestrate,
         )
         if session.get("status") != "complete":
             # roll back the audio so we don't leave it playing into a dead session
@@ -1438,9 +1440,12 @@ class EarshotTools:
             "profile": session.get("profile"),
             "baseline_summary": session.get("baseline_summary"),
             "components_started": session.get("components_started"),
+            "auto_orchestrate": session.get("auto_orchestrate"),
+            "feed_path": session.get("feed_path"),
             "note": ("Playing once through the chain + delay; agent reads raw, you "
-                     "hear it delayed by delay_seconds. Call earshot_stop(session_id) "
-                     "to stop playback + tear down."),
+                     "hear it delayed by delay_seconds. When auto_orchestrate is on, "
+                     "the headless worker voices commentary into feed_path — tail it "
+                     "in a terminal. Call earshot_stop(session_id) to stop + tear down."),
         }
 
     async def earshot_stop(self, session_id: str, **_kw) -> dict:
@@ -1576,6 +1581,7 @@ class EarshotTools:
         sync_silence_threshold_db: float = -65.0,
         sync_timeout_s: float = 300.0,
         playback_start_ms: Optional[int] = None,
+        auto_orchestrate: bool = False,
         **_kw,
     ) -> dict:
         """Bring up a Phase 3 co-listening session.
@@ -1902,8 +1908,53 @@ class EarshotTools:
                     name=f"playback_sync_{session_id}",
                 )
                 state.playback_sync_task = sync_task
+            if auto_orchestrate:
+                from earshot.runtime.commentary_worker import CommentaryWorker
+                session_dir = Path(commentary_logger.path).parent
+                feed_path = session_dir / "feed.txt"
+                _ld = baseline.loudness
+                session_meta = {
+                    "session_id": session_id,
+                    "track_id": track_id,
+                    "artist_id": getattr(baseline, "artist_id", ""),
+                    "mode": mode,
+                    "profile": profile.name,
+                    "playback_start_ms": playback_start_ms,
+                    "delay_buffer_ms": delay_buffer_ms,
+                    "duration_s": baseline.duration_s,
+                    "audio": {
+                        "tempo_bpm": baseline.tempo_bpm,
+                        "key": {"tonic": baseline.key.tonic, "mode": baseline.key.mode,
+                                "confidence": getattr(baseline.key, "confidence", None)},
+                        "lufs_integrated": getattr(_ld, "integrated_lufs", None),
+                        "lra_lu": getattr(_ld, "lra_lu", None),
+                        "spectral_centroid_mean_hz": baseline.spectral_centroid_mean_hz,
+                        "dynamic_range_db": baseline.dynamic_range_db,
+                        "onset_rate_hz": baseline.onset_rate_hz,
+                        "harmonic_tension_mean": baseline.harmonic_tension_mean,
+                        "chord_change_rate_mean": baseline.chord_change_rate_mean,
+                    },
+                    "sections": baseline.section_map,
+                }
+                (session_dir / "session.json").write_text(
+                    json.dumps(session_meta, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+                worker = CommentaryWorker(
+                    session_id=session_id,
+                    queue=commentary_queue,
+                    playback_start_ms=playback_start_ms,
+                    delay_buffer_ms=delay_buffer_ms,
+                    feed_path=feed_path,
+                )
+                state.commentary_worker = worker
+                await worker.start()
         except Exception as e:
             logger.exception("earshot_start_session: failed mid-startup; rolling back")
+            if state.commentary_worker is not None:
+                try:
+                    await state.commentary_worker.stop()
+                except Exception:
+                    pass
             if sync_task is not None and not sync_task.done():
                 sync_task.cancel()
                 try:
@@ -1961,7 +2012,11 @@ class EarshotTools:
                 "prediction_comparator": pred_comp is not None and not sync_effective,
                 "lv2_poller": lv2_poller is not None,
                 "streaming_companion": companion_process is not None,
+                "commentary_worker": state.commentary_worker is not None,
             },
+            "auto_orchestrate": auto_orchestrate,
+            "feed_path": (str(Path(commentary_logger.path).parent / "feed.txt")
+                          if state.commentary_worker is not None else None),
             "sync_to_audio": sync_effective,
             "sync_monitor_type": (
                 (sync_monitor_type or (next(iter(semantics)) if semantics else None))
@@ -2132,6 +2187,10 @@ class EarshotTools:
             except Exception as e:
                 logger.warning("earshot_end_session: %s.stop raised: %s", label, e)
                 stop_errors.append(f"{label}: {e}")
+
+        # Headless orchestrator first — stop fulfilling/draining before the
+        # queue + scheduler go away.
+        await _safe_stop(state.commentary_worker, "commentary_worker")
 
         # Producers first so no new ambient entries arrive after consumers stop.
         # Companion is a producer too (writes the same JSONL); terminate it

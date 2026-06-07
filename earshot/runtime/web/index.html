@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" data-state="loading">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>earshot — listening session</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..650;1,9..144,300..650&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<svg class="grain" aria-hidden="true"><filter id="g"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#g)"/></svg>
+
+<main class="stage">
+  <header class="masthead">
+    <div class="brand">
+      <span class="mark">◐</span>
+      <span class="wordmark">earshot</span>
+      <span class="sub">listening session</span>
+    </div>
+    <div class="nowline">
+      <span class="label">now listening</span>
+      <h1 class="title" id="title">—</h1>
+      <span class="artist" id="artist"></span>
+    </div>
+    <dl class="readout" id="readout" aria-label="audio analysis"></dl>
+  </header>
+
+  <section class="feed-wrap">
+    <div class="feed" id="feed" role="log" aria-live="polite" aria-relevant="additions"></div>
+    <div class="feed-fade"></div>
+  </section>
+
+  <footer class="transport" aria-label="playback position (display only)">
+    <time class="tc tc-now" id="tcNow">0:00</time>
+    <div class="rail" id="rail">
+      <div class="sections" id="sections"></div>
+      <div class="tickrow" id="tickrow"></div>
+      <div class="played" id="played"></div>
+      <div class="head" id="head"><span class="head-dot"></span></div>
+    </div>
+    <time class="tc tc-end" id="tcEnd">0:00</time>
+  </footer>
+</main>
+
+<div class="curtain" id="curtain"><p class="curtain-msg" id="curtainMsg">waiting for a session…</p></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

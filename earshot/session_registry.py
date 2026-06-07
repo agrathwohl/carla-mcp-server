@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from earshot.comparators.prediction import PredictionComparator
     from earshot.lv2_poller import LV2Poller
     from earshot.profiles import Profile
+    from earshot.runtime.commentary_worker import CommentaryWorker
     from earshot.scheduler.commentary import CommentaryLogger, CommentaryQueue
     from earshot.scheduler.core import Scheduler
 
@@ -99,6 +100,10 @@ class SessionState:
     # present, end_session pauses transport + removes the source so stopping
     # the session also stops the audio.
     source_plugin_id: Optional[int] = None
+    # Phase O — headless commentary worker (auto-orchestrate). Drains prose
+    # requests + fulfills them via Claude Haiku so no human orchestrator is
+    # needed; end_session stops it.
+    commentary_worker: Optional["CommentaryWorker"] = None
 
 
 class SessionRegistry:

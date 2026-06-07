@@ -133,6 +133,13 @@ class DriftComparator:
         }
         # Last drift-event wall-clock ms per dimension (for debounce).
         self._last_fired_ms: dict[Dimension, int] = {}
+        # Last value REPORTED per dimension — the running "current state" the
+        # next event narrates from (previous -> current), not the static baseline.
+        self._last_value: dict[Dimension, Any] = {}
+        # KEY stability: a key estimate must hold across consecutive readings
+        # before it counts as a real change (the live estimate is jittery).
+        self._key_run_value: Optional[tuple] = None
+        self._key_run_count: int = 0
 
         self._task: Optional[asyncio.Task] = None
         self._running = False

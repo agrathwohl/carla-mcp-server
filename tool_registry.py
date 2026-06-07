@@ -1269,6 +1269,15 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                             "audio actually starts, not when this tool was called."
                         ),
                     },
+                    "auto_orchestrate": {
+                        "type": "boolean", "default": False,
+                        "description": (
+                            "Run the headless commentary worker: fulfill prose requests "
+                            "via Claude Haiku in-process and write delivered commentary to "
+                            "a feed file (sessions/{id}/feed.txt) the user tails. No human "
+                            "orchestrator / earshot_submit_commentary needed."
+                        ),
+                    },
                     "sync_monitor_type": {
                         "type": "string",
                         "description": (
@@ -1564,6 +1573,14 @@ def create_carla_tool_registry() -> MCPToolRegistry:
                     },
                     "delay_seconds": {"type": "number", "default": 5.0},
                     "alias": {"type": "string", "description": "Explicit session id."},
+                    "auto_orchestrate": {
+                        "type": "boolean", "default": True,
+                        "description": (
+                            "Run the headless commentary worker (Claude Haiku) so commentary "
+                            "is written to feed.txt with no human orchestrator. Set false to "
+                            "drive prose manually via earshot_get_commentary_queue."
+                        ),
+                    },
                 },
                 "required": ["track_id"],
             },
