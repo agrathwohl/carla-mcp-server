@@ -39,33 +39,88 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 SYSTEM_PROMPT = (
     "You are Earshot, a co-listening companion reacting in real time to a track "
-    "playing right now. You are handed one measured musical or mix event that "
-    "just happened. Write ONE short spoken-style reaction — at most two "
-    "sentences — about that moment.\n\n"
+    "playing right now — a listener who cares most about songwriting, voice, and "
+    "what a track is reaching for. You are handed one measured moment that just "
+    "happened. Write ONE short spoken-style reaction, at most two sentences.\n\n"
+    "What to react to, in priority order:\n"
+    "1. THE WORDS. If a `lyric` is present, lead with it: react to what the writer "
+    "is actually saying — an image, a turn of phrase, what it reveals or admits. "
+    "For a singer-songwriter this is the main event; treat the music as how the "
+    "line is being delivered, not the subject itself.\n"
+    "2. THE ARTIST. If `artist_context` is present you may connect the moment to "
+    "who made it or where it sits in their body of work — a real observation or a "
+    "noticing, never a recited biography.\n"
+    "3. THE FEEL OF THE SOUND. Only when it is genuinely notable, name the shift "
+    "in feel — a drop in weight, a thinning or thickening, a brightening. Describe "
+    "how it lands, not as a meter reading.\n\n"
     "Hard rules:\n"
-    "- Present tense, about what is happening NOW. Never reference anything that "
-    "has not happened yet (no 'about to', 'next section', 'coming up'): the "
-    "listener has not heard it.\n"
-    "- Ground every claim in the numbers given (dB, BPM, key, onset rate). Be "
-    "specific, not vague.\n"
+    "- Present tense, about what is happening NOW. Never reference anything not "
+    "yet heard (no 'about to', 'next', 'coming up').\n"
+    "- Numbers inform you; they are NOT the subject. Do not build the line around "
+    "a measurement. If you must cite a level, use a whole number, never decimals.\n"
+    "- VARY. Do not keep making the same kind of observation. If the only thing "
+    "that moved would come out sounding like your usual line, find a fresh angle "
+    "or keep it minimal — sameness for its own sake is worse than brevity.\n"
+    "- `current`/`previous`/`baseline` are context; narrate the move from "
+    "`previous` to `current`, and never re-quote `baseline` as if nothing moves.\n"
     "- No marketing superlatives (amazing, incredible, stunning). No claims about "
     "your own feelings ('I feel', 'I love').\n"
-    "- Only let enthusiasm rise if the event's `warrant` is >= 1.0 and the "
-    "magnitude is genuinely large; otherwise stay measured and plain.\n"
-    "- If a `lyric` is given, it is the words playing right now — you may quote or "
-    "react to it. If `artist_context` is given you may lightly ground the "
-    "reaction in who made it, but do not recite a biography.\n"
     "- Output ONLY the line itself. No preamble, no quotes around it, no labels."
 )
+
+SUMMARY_SYSTEM_PROMPT = (
+    "You are Earshot, a co-listening companion. The track has finished. Looking "
+    "back over the running commentary you gave, write a brief closing reflection "
+    "on the piece as a whole — two or three sentences on its overall shape and "
+    "character and how it moved across its length. Grounded and specific, not "
+    "vague; no marketing superlatives, no claims about your own feelings, no "
+    "lists. Output ONLY the reflection."
+)
+
+
+def write_emission(
+    feed_path: Path,
+    em: CommentaryEmission,
+    *,
+    playback_start_ms: int,
+    delay_buffer_ms: int,
+) -> None:
+    """Append one emission to the .txt + .jsonl feed the web UI tails. Shared
+    by the headless worker and the agent-orchestrated submit path so both
+    render identically to the UI."""
+    t = (em.ts_user_clock_ms - playback_start_ms - delay_buffer_ms) / 1000.0
+    track_time_s = t if t > 0 else 0.0
+    clock = f"{int(track_time_s) // 60:d}:{int(track_time_s) % 60:02d}"
+    feed_path.parent.mkdir(parents=True, exist_ok=True)
+    with feed_path.open("a", encoding="utf-8") as fp:
+        fp.write(f"[{clock}] {em.level.name:11s} {em.content}\n")
+    record = {
+        "level": int(em.level),
+        "level_name": em.level.name,
+        "content": em.content,
+        "ts_user_clock_ms": em.ts_user_clock_ms,
+        "track_time_s": round(track_time_s, 3),
+        "dimensions": list(em.dimensions),
+        "source_event_id": em.source_event_id,
+        "score": em.score,
+    }
+    with feed_path.with_suffix(".jsonl").open("a", encoding="utf-8") as fp:
+        fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _round_val(v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return v
+    return int(round(v)) if abs(v) >= 1 else round(v, 2)
 
 
 def _fmt_event(ctx: dict) -> str:
     keys = (
-        "domain", "dimension", "music_event", "magnitude", "baseline",
-        "current", "threshold", "warrant", "lyric", "track_time_s",
-        "expected", "actual",
+        "domain", "dimension", "music_event", "previous", "current",
+        "baseline", "magnitude", "threshold", "warrant", "lyric",
+        "track_time_s", "expected", "actual",
     )
-    lines = [f"{k}: {ctx[k]}" for k in keys if ctx.get(k) is not None]
+    lines = [f"{k}: {_round_val(ctx[k])}" for k in keys if ctx.get(k) is not None]
     art = ctx.get("artist_context")
     if art:
         lines.append(f"artist_context: {art}")
@@ -86,6 +141,8 @@ class CommentaryWorker:
         playback_start_ms: int,
         delay_buffer_ms: int,
         feed_path: Path,
+        duration_s: float = 0.0,
+        track_id: str = "",
         api_key: Optional[str] = None,
         model: str = DEFAULT_MODEL,
         poll_interval_s: float = 0.25,
@@ -94,6 +151,8 @@ class CommentaryWorker:
         self.queue = queue
         self.playback_start_ms = int(playback_start_ms)
         self.delay_buffer_ms = int(delay_buffer_ms)
+        self.duration_s = float(duration_s)
+        self.track_id = track_id
         self.feed_path = Path(feed_path)
         self._jsonl_path = self.feed_path.with_suffix(".jsonl")
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -105,6 +164,8 @@ class CommentaryWorker:
         self._sem = asyncio.Semaphore(3)
         self._running = False
         self._client: Optional[httpx.AsyncClient] = None
+        self._summary_material: list[str] = []
+        self._summarized = False
         self._stats = {
             "prose_fulfilled": 0,
             "prose_rejected": 0,
@@ -154,6 +215,10 @@ class CommentaryWorker:
                         t.add_done_callback(self._inflight.discard)
                     elif isinstance(item, CommentaryEmission):
                         self._write_feed(item)
+                if (not self._summarized and self.duration_s > 0
+                        and self._track_pos_now() >= self.duration_s):
+                    self._summarized = True
+                    await self._emit_summary()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -191,13 +256,20 @@ class CommentaryWorker:
         )
         await self.queue.push(emission)
         self._stats["prose_fulfilled"] += 1
+        tt = ctx.get("track_time_s")
+        self._summary_material.append(f"[{tt}] {prose}" if tt is not None else prose)
+        if len(self._summary_material) > 50:
+            self._summary_material = self._summary_material[-50:]
 
     async def _call_haiku(self, ctx: dict) -> Optional[str]:
+        return await self._call_haiku_raw(SYSTEM_PROMPT, _fmt_event(ctx), max_tokens=160)
+
+    async def _call_haiku_raw(self, system: str, user: str, max_tokens: int) -> Optional[str]:
         payload = {
             "model": self.model,
-            "max_tokens": 160,
-            "system": SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": _fmt_event(ctx)}],
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
         }
         headers = {
             "x-api-key": self.api_key,
@@ -218,6 +290,38 @@ class CommentaryWorker:
         text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
         return text.strip() or None
 
+    def _track_pos_now(self) -> float:
+        return (now_ms() - self.playback_start_ms - self.delay_buffer_ms) / 1000.0
+
+    async def _emit_summary(self) -> None:
+        material = "\n".join(self._summary_material[-40:]) or "(a mostly quiet listen)"
+        user = (
+            f'The listening session for the track "{self.track_id}" has just ended. '
+            f"Here is the running commentary you gave during it, in order:\n\n{material}\n\n"
+            "Write a brief closing reflection — two or three sentences — on the piece as a "
+            "whole: its overall arc and character, how it travelled from start to finish. "
+            "Grounded in what you noticed; past or present tense; no marketing, no lists."
+        )
+        prose = await self._call_haiku_raw(SUMMARY_SYSTEM_PROMPT, user, max_tokens=320)
+        if not prose:
+            return
+        result = DEFAULT_VALIDATOR.validate(prose, warrant=0.0)
+        if not result.ok:
+            logger.info("CommentaryWorker(%s): summary rejected (%s)",
+                        self.session_id, ", ".join(result.reasons))
+            return
+        end_ts = self.playback_start_ms + int(self.duration_s * 1000) + self.delay_buffer_ms
+        self._write_feed(CommentaryEmission(
+            level=IntensityLevel.REFLECTION,
+            content=prose,
+            ts_user_clock_ms=end_ts,
+            source_event_id="session_summary",
+            dimensions=["session summary"],
+            score=0.0,
+            created_at_ms=now_ms(),
+        ))
+        logger.info("CommentaryWorker(%s): wrote end-of-session summary", self.session_id)
+
     def _track_time_s(self, ts_user_clock_ms: int) -> float:
         t = (ts_user_clock_ms - self.playback_start_ms - self.delay_buffer_ms) / 1000.0
         return t if t > 0 else 0.0
@@ -231,21 +335,9 @@ class CommentaryWorker:
             fp.write(f"\n=== earshot feed :: {self.session_id} ===\n")
 
     def _write_feed(self, em: CommentaryEmission) -> None:
-        ts = em.ts_user_clock_ms
-        with self.feed_path.open("a", encoding="utf-8") as fp:
-            fp.write(f"[{self._track_clock(ts)}] {em.level.name:11s} {em.content}\n")
-        record = {
-            "level": int(em.level),
-            "level_name": em.level.name,
-            "content": em.content,
-            "ts_user_clock_ms": ts,
-            "track_time_s": round(self._track_time_s(ts), 3),
-            "dimensions": list(em.dimensions),
-            "source_event_id": em.source_event_id,
-            "score": em.score,
-        }
-        with self._jsonl_path.open("a", encoding="utf-8") as fp:
-            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        write_emission(self.feed_path, em,
+                       playback_start_ms=self.playback_start_ms,
+                       delay_buffer_ms=self.delay_buffer_ms)
         self._stats["emissions_written"] += 1
 
     def stats(self) -> dict:

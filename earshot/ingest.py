@@ -708,11 +708,18 @@ class EarshotTools:
             created_at_ms=now_ms(),
         )
         await state.commentary_queue.push(emission)
+        wrote_feed = state.commentary_worker is None and state.feed_path is not None
+        if wrote_feed:
+            from earshot.runtime.commentary_worker import write_emission
+            write_emission(state.feed_path, emission,
+                           playback_start_ms=state.playback_start_ms,
+                           delay_buffer_ms=state.delay_buffer_ms)
         return {
             "status": "complete",
             "session_id": session_id,
             "level": level.name,
             "ts_user_clock_ms": emission.ts_user_clock_ms,
+            "feed_written": wrote_feed,
         }
 
     async def earshot_get_commentary_queue(
@@ -1123,15 +1130,13 @@ class EarshotTools:
     _AUDIOFILE_PARAM_HOSTSYNC = 1
 
     # Canonical map of the streaming companion's ambient `type`s -> comparator
-    # Dimension values (see earshot/companion/streaming.py emit() calls and the
-    # Dimension enum in comparators/events.py). Merged into the LV2-chain
-    # semantics by earshot_play so the music-domain dims (tempo/key/harmonic/
-    # onset) actually drive drift + prediction, not just dynamics. Without this
-    # the companion writes these entries to the ambient stream but no comparator
-    # is mapped to them, so every event ends up domain="mix".
+    # Dimension values. Tempo and key are deliberately EXCLUDED: the companion's
+    # per-chunk tempo estimate octave-/count-in-jumps on rhythmically steady
+    # material, and its per-frame "key" tracks the chord under the cursor (a
+    # I-IV-V progression reads as constant "key changes"), so both emit false,
+    # repetitive drift. The real tempo/key live in the static baseline; only
+    # genuinely time-varying texture dims drive live commentary.
     _COMPANION_SEMANTICS = {
-        "tempo_bpm": "tempo",
-        "key": "key",
         "onset_density": "onset_density",
         "harmonic_tension": "harmonic_tension",
         "chord_change_rate": "chord_change_rate",
@@ -1307,7 +1312,7 @@ class EarshotTools:
         semantics: Optional[dict] = None,
         delay_seconds: float = 5.0,
         alias: Optional[str] = None,
-        auto_orchestrate: bool = True,
+        auto_orchestrate: bool = False,
         **_kw,
     ) -> dict:
         """Phase N — one-call co-listening: load the analyzer chain, load the
@@ -1846,6 +1851,8 @@ class EarshotTools:
             boundary_detector=boundary_det,
             companion_process=companion_process,
             commentary_logger=commentary_logger,
+            feed_path=writer.path.parent / "feed.txt",
+            delay_buffer_ms=delay_buffer_ms,
         )
         registry.register(state)
 
@@ -1908,46 +1915,55 @@ class EarshotTools:
                     name=f"playback_sync_{session_id}",
                 )
                 state.playback_sync_task = sync_task
+            # session.json + an initialized feed are written for EVERY live
+            # session (not just auto-orchestrate) so the web UI works whether
+            # the headless worker or the agent writes the commentary.
+            session_dir = Path(commentary_logger.path).parent
+            feed_path = session_dir / "feed.txt"
+            _ld = baseline.loudness
+            session_meta = {
+                "session_id": session_id,
+                "track_id": track_id,
+                "artist_id": getattr(baseline, "artist_id", ""),
+                "mode": mode,
+                "profile": profile.name,
+                "playback_start_ms": playback_start_ms,
+                "delay_buffer_ms": delay_buffer_ms,
+                "duration_s": baseline.duration_s,
+                "audio": {
+                    "tempo_bpm": baseline.tempo_bpm,
+                    "key": {"tonic": baseline.key.tonic, "mode": baseline.key.mode,
+                            "confidence": getattr(baseline.key, "confidence", None)},
+                    "lufs_integrated": getattr(_ld, "integrated_lufs", None),
+                    "lra_lu": getattr(_ld, "lra_lu", None),
+                    "spectral_centroid_mean_hz": baseline.spectral_centroid_mean_hz,
+                    "dynamic_range_db": baseline.dynamic_range_db,
+                    "onset_rate_hz": baseline.onset_rate_hz,
+                    "harmonic_tension_mean": baseline.harmonic_tension_mean,
+                    "chord_change_rate_mean": baseline.chord_change_rate_mean,
+                },
+                "sections": baseline.section_map,
+            }
+            (session_dir / "session.json").write_text(
+                json.dumps(session_meta, ensure_ascii=False, indent=2),
+                encoding="utf-8")
             if auto_orchestrate:
                 from earshot.runtime.commentary_worker import CommentaryWorker
-                session_dir = Path(commentary_logger.path).parent
-                feed_path = session_dir / "feed.txt"
-                _ld = baseline.loudness
-                session_meta = {
-                    "session_id": session_id,
-                    "track_id": track_id,
-                    "artist_id": getattr(baseline, "artist_id", ""),
-                    "mode": mode,
-                    "profile": profile.name,
-                    "playback_start_ms": playback_start_ms,
-                    "delay_buffer_ms": delay_buffer_ms,
-                    "duration_s": baseline.duration_s,
-                    "audio": {
-                        "tempo_bpm": baseline.tempo_bpm,
-                        "key": {"tonic": baseline.key.tonic, "mode": baseline.key.mode,
-                                "confidence": getattr(baseline.key, "confidence", None)},
-                        "lufs_integrated": getattr(_ld, "integrated_lufs", None),
-                        "lra_lu": getattr(_ld, "lra_lu", None),
-                        "spectral_centroid_mean_hz": baseline.spectral_centroid_mean_hz,
-                        "dynamic_range_db": baseline.dynamic_range_db,
-                        "onset_rate_hz": baseline.onset_rate_hz,
-                        "harmonic_tension_mean": baseline.harmonic_tension_mean,
-                        "chord_change_rate_mean": baseline.chord_change_rate_mean,
-                    },
-                    "sections": baseline.section_map,
-                }
-                (session_dir / "session.json").write_text(
-                    json.dumps(session_meta, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
                 worker = CommentaryWorker(
                     session_id=session_id,
                     queue=commentary_queue,
                     playback_start_ms=playback_start_ms,
                     delay_buffer_ms=delay_buffer_ms,
                     feed_path=feed_path,
+                    duration_s=baseline.duration_s,
+                    track_id=track_id,
                 )
                 state.commentary_worker = worker
                 await worker.start()
+            else:
+                feed_path.write_text(
+                    f"\n=== earshot feed :: {session_id} ===\n", encoding="utf-8")
+                feed_path.with_suffix(".jsonl").write_text("", encoding="utf-8")
         except Exception as e:
             logger.exception("earshot_start_session: failed mid-startup; rolling back")
             if state.commentary_worker is not None:

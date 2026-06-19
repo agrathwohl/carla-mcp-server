@@ -82,13 +82,17 @@ function buildTicks(onsetRate, dur) {
 }
 
 let SESSION = null;
+let entryN = 0;
 
 function appendEntry(rec) {
   const feed = $("feed");
   const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
   const tick = rec.level_name === "ACTION_TEXT";
+  const summary = rec.source_event_id === "session_summary";
+  const id = "e" + (entryN++);
   const el = document.createElement("article");
-  el.className = `entry l-${rec.level_name}${tick ? " tick" : ""}`;
+  el.className = `entry l-${rec.level_name}${tick ? " tick" : ""}${summary ? " summary" : ""}`;
+  el.id = id;
   const chips = (!tick && rec.dimensions && rec.dimensions.length)
     ? `<div class="chips">${rec.dimensions.map(d =>
         `<span class="chip">${esc(String(d).replace(/_/g, " "))}</span>`).join("")}</div>`
@@ -98,7 +102,30 @@ function appendEntry(rec) {
     `<div class="body"><p class="text"></p>${chips}</div>`;
   el.querySelector(".text").textContent = rec.content;
   feed.appendChild(el);
+  addMarker(rec, id, tick, summary);
   if (nearBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+function addMarker(rec, targetId, tick, summary) {
+  const dur = (SESSION && SESSION.duration_s) || 0;
+  if (!dur || rec.track_time_s == null) return;
+  const pct = clamp(rec.track_time_s / dur, 0, 1) * 100;
+  const m = document.createElement("button");
+  m.type = "button";
+  m.className = "marker " + (summary ? "m-summary" : tick ? "m-tick" : "m-prose");
+  m.style.left = pct + "%";
+  const label = `${fmt(rec.track_time_s)} — ${rec.content.slice(0, 64)}`;
+  m.title = label;
+  m.setAttribute("aria-label", label);
+  m.addEventListener("click", () => {
+    const t = document.getElementById(targetId);
+    if (!t) return;
+    t.scrollIntoView({ behavior: "smooth", block: "center" });
+    t.classList.remove("flash");
+    void t.offsetWidth;
+    t.classList.add("flash");
+  });
+  $("markers").appendChild(m);
 }
 
 function connectFeed() {

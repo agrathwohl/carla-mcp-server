@@ -148,6 +148,24 @@ body {
   .nowline { text-align: left; align-items: flex-start; }
   .entry .text { font-size: 1.12rem; }
 }
+.markers { position: absolute; inset: 0; pointer-events: none; }
+.marker { position: absolute; top: 0; bottom: 0; width: 12px; transform: translateX(-50%);
+  pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 0; }
+.marker::before { content: ""; position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
+  width: 2px; height: 7px; background: var(--ink-faint); border-radius: 1px;
+  transition: height .15s ease, background .15s ease; }
+.marker:hover::before, .marker:focus-visible::before { height: 15px; background: var(--accent); }
+.marker.m-prose::before { background: var(--ink-dim); }
+.marker.m-summary::before { background: var(--accent); height: 12px; width: 3px; }
+
+.entry { border-radius: 5px; scroll-margin: 1.5rem; }
+.entry.flash { animation: flash 1.8s ease-out; }
+@keyframes flash {
+  0% { background: hsl(var(--hue) 45% 24% / .6); box-shadow: -1rem 0 0 hsl(var(--hue) 45% 24% / .6); }
+  100% { background: transparent; box-shadow: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .entry { animation: none; } .head-dot { animation: none; } .feed { scroll-behavior: auto; }
+  .entry.flash { animation: none; outline: 1px solid var(--accent); }
 }

@@ -104,6 +104,11 @@ class SessionState:
     # requests + fulfills them via Claude Haiku so no human orchestrator is
     # needed; end_session stops it.
     commentary_worker: Optional["CommentaryWorker"] = None
+    # Feed output (.txt/.jsonl) + anti-spoiler delay, set for every live
+    # session so the agent-orchestrated submit path can write the same feed
+    # the headless worker would, with correct track-time stamps.
+    feed_path: Optional["Path"] = None
+    delay_buffer_ms: int = 5000
 
 
 class SessionRegistry:

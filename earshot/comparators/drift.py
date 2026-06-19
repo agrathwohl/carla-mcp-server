@@ -57,12 +57,19 @@ logger = logging.getLogger(__name__)
 # emits at ~4 Hz; tune in Phase J if a different cadence is configured.
 DEFAULT_WINDOW_SAMPLES = {
     Dimension.DYNAMIC_ENVELOPE: 16,     # ~4 s
-    Dimension.TEMPO: 12,                # ~3 s (companion-emitted at ~1 Hz → 12 s, fine)
+    Dimension.TEMPO: 24,                # long median — the tempo estimate octave-flips over short windows
     Dimension.KEY: 8,                   # categorical
     Dimension.LUFS_INTEGRATED: 8,
     Dimension.SPECTRAL_CENTROID: 16,
     Dimension.ONSET_DENSITY: 12,
 }
+
+# dB (logarithmic) dimensions — relative-% change is meaningless, so they stay
+# gated by their absolute thresholds. Every other (linear) dimension must move
+# at least _MIN_RELATIVE_CHANGE since last report before re-firing, so micro-
+# wobbles and "still the same value" repeats never get narrated.
+_ABS_CHANGE_DIMS = {Dimension.LUFS_INTEGRATED, Dimension.DYNAMIC_ENVELOPE}
+_MIN_RELATIVE_CHANGE = 0.10
 
 
 class DriftComparator:
@@ -274,6 +281,13 @@ class DriftComparator:
         if threshold is None or magnitude <= threshold:
             return  # within tolerance
 
+        prev_reported = self._last_value.get(dim)
+        if (prev_reported is not None and dim not in _ABS_CHANGE_DIMS
+                and isinstance(prev_reported, (int, float))):
+            denom = abs(prev_reported) if abs(prev_reported) > 1e-6 else 1.0
+            if abs(windowed_current - prev_reported) / denom < _MIN_RELATIVE_CHANGE:
+                return
+
         # Debounce: don't re-fire for same dim within debounce_seconds.
         last_fired = self._last_fired_ms.get(dim)
         if last_fired is not None and (ts_ms - last_fired) < self.debounce_seconds * 1000:
@@ -290,9 +304,11 @@ class DriftComparator:
             track_time_s=round(track_time_s, 3),
             window_size_samples=len(window),
             calibration_offset=round(new_offset, 4),
+            previous=self._last_value.get(dim),
         )
         await self.queue.push(event)
         self._last_fired_ms[dim] = ts_ms
+        self._last_value[dim] = round(windowed_current, 4)
         self._stats["events_emitted"] += 1
         logger.info(
             "drift fired: %s magnitude=%.3f (raw=%.3f offset=%.3f) "
@@ -324,7 +340,18 @@ class DriftComparator:
             current_key = (parts[0], parts[1])
         else:
             return  # unrecognized shape
-        if current_key == baseline_key or None in current_key:
+        if None in current_key:
+            return
+        if current_key == self._key_run_value:
+            self._key_run_count += 1
+        else:
+            self._key_run_value = current_key
+            self._key_run_count = 1
+        if self._key_run_count < 2:
+            return  # estimate hasn't held long enough — treat as jitter
+        current_str = f"{current_key[0]} {current_key[1]}"
+        prev_str = self._last_value.get(dim) or f"{baseline_key[0]} {baseline_key[1]}"
+        if current_str == prev_str:
             return
 
         last_fired = self._last_fired_ms.get(dim)
@@ -334,16 +361,18 @@ class DriftComparator:
 
         event = DriftEvent(
             dimension=dim,
-            magnitude=1.0,  # categorical: change = magnitude 1
+            magnitude=1.0,
             baseline=f"{baseline_key[0]} {baseline_key[1]}",
-            current=f"{current_key[0]} {current_key[1]}",
+            current=current_str,
             threshold=None,
             ts_ms=ts_ms,
             track_time_s=round(track_time_s, 3),
             window_size_samples=1,
+            previous=prev_str,
         )
         await self.queue.push(event)
         self._last_fired_ms[dim] = ts_ms
+        self._last_value[dim] = current_str
         self._stats["events_emitted"] += 1
         logger.info(
             "key drift fired: baseline=%s current=%s at t=%.1fs",

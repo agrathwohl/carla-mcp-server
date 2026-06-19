@@ -514,6 +514,7 @@ class Scheduler:
                 "magnitude": event.magnitude,
                 "baseline": event.baseline,
                 "current": event.current,
+                "previous": event.previous,
                 "threshold": event.threshold,
                 # Calibration EMA-tracked offset that was subtracted from raw
                 # drift to get magnitude (None until comparators emit it).
